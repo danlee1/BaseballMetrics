@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Player Report Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .file-label {
+            transition: all 0.2s ease-in-out;
+        }
+        .file-label:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .spinner {
+            border-top-color: transparent;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8 max-w-4xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Player Report Generator</h1>
+            <p class="mt-2 text-md text-gray-600">Upload CSV files to generate a summarized player performance report.</p>
+        </header>
+
+        <main class="space-y-6">
+            <!-- Step 1: File Upload -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Step 1: Upload CSV Files</h2>
+                <div class="mt-4">
+                    <label for="csvFiles" class="file-label cursor-pointer w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
+                        <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        <span>Select Files</span>
+                    </label>
+                    <input type="file" id="csvFiles" class="hidden" multiple accept=".csv">
+                    <p id="fileList" class="mt-4 text-sm text-gray-500">No files selected.</p>
+                </div>
+            </div>
+
+            <!-- Step 2: Process and Download -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Step 2: Generate & Download Report</h2>
+                <div class="flex flex-col sm:flex-row gap-4 mt-4">
+                    <button id="processBtn" class="w-full sm:w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed inline-flex items-center justify-center">
+                        <span id="processBtnText">Generate Report</span>
+                        <div id="spinner" class="spinner border-4 border-white rounded-full ml-3 hidden"></div>
+                    </button>
+                    <button id="downloadBtn" class="w-full sm:w-1/2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md hidden">Download Report</button>
+                </div>
+                <div id="status" class="mt-4 p-4 bg-gray-50 rounded-lg text-sm min-h-[50px]"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Element references
+            const csvFilesInput = document.getElementById('csvFiles');
+            const fileList = document.getElementById('fileList');
+            const processBtn = document.getElementById('processBtn');
+            const processBtnText = document.getElementById('processBtnText');
+            const spinner = document.getElementById('spinner');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const statusDiv = document.getElementById('status');
+
+            let processedData = null;
+            let finalHeaders = [
+                'Player', 'Date', 'Practice Type', 
+                // Hitting Headers
+                'Peak Exit Velocity', 'EV 50', 'Launch Angle (0-30%)', 'Hard Hit %', 'Barrel %',
+                // Pitching Headers
+                'TaggedPitchType', 'Peak Velocity', 'Average Velocity', 'Average IVB', 'Average HB', 'Strike %'
+            ];
+
+            // --- Event Listeners ---
+
+            csvFilesInput.addEventListener('change', () => {
+                if (csvFilesInput.files.length > 0) {
+                    fileList.textContent = `${csvFilesInput.files.length} file(s) selected.`;
+                    log('Files selected. Ready to generate report.', 'info');
+                } else {
+                    fileList.textContent = 'No files selected.';
+                }
+                downloadBtn.classList.add('hidden');
+                processedData = null;
+            });
+            
+            processBtn.addEventListener('click', handleReportGeneration);
+
+            downloadBtn.addEventListener('click', () => {
+                if (processedData) {
+                    downloadCSV(processedData, finalHeaders, 'player_report.csv');
+                } else {
+                    log('No data to download. Please generate a report first.', 'error');
+                }
+            });
+
+            // --- Core Functions ---
+
+            /**
+             * Main handler to read, combine, and process CSV files into a report.
+             */
+            async function handleReportGeneration() {
+                const files = csvFilesInput.files;
+                if (files.length === 0) {
+                    log('Please select at least one CSV file.', 'error');
+                    return;
+                }
+
+                processBtn.disabled = true;
+                processBtnText.textContent = 'Processing...';
+                spinner.classList.remove('hidden');
+                downloadBtn.classList.add('hidden');
+                log('Starting report generation...', 'info');
+
+                try {
+                    const allFilesData = await Promise.all(Array.from(files).map(readFile));
+                    log(`Successfully read ${allFilesData.length} files.`, 'info');
+
+                    let combinedData = [];
+                    allFilesData.forEach(file => {
+                        combinedData = combinedData.concat(file.data);
+                    });
+                    log(`Combined ${combinedData.length} total rows. Grouping data...`, 'info');
+
+                    const groupedByPlayerAndPractice = groupDataByPlayerAndPractice(combinedData);
+                    log(`Found ${Object.keys(groupedByPlayerAndPractice).length} unique player/practice sessions. Calculating metrics...`, 'info');
+                    
+                    const reportData = [];
+
+                    for (const groupKey in groupedByPlayerAndPractice) {
+                        const playerRows = groupedByPlayerAndPractice[groupKey];
+                        const playerName = playerRows[0].Batter || playerRows[0].Pitcher;
+                        const practiceType = playerRows[0]?.PracticeType?.toLowerCase() || 'unknown';
+                        const date = playerRows[0]?.Date || '';
+
+                        const baseRow = {
+                            'Player': playerName,
+                            'Date': date,
+                            'Practice Type': playerRows[0]?.PracticeType || '',
+                            'Peak Exit Velocity': '', 'EV 50': '', 'Launch Angle (0-30%)': '', 'Hard Hit %': '', 'Barrel %': '',
+                            'TaggedPitchType': '', 'Peak Velocity': '', 'Average Velocity': '', 'Average IVB': '', 'Average HB': '', 'Strike %': ''
+                        };
+
+                        if (practiceType === 'hitting') {
+                            const metrics = calculateHittingMetrics(playerRows);
+                            reportData.push({ ...baseRow, ...metrics });
+                        } else {
+                            const groupedByPitchType = groupData(playerRows, 'TaggedPitchType');
+                            for (const pitchType in groupedByPitchType) {
+                                if (!pitchType) continue; // Skip if pitch type is empty
+                                const pitchTypeRows = groupedByPitchType[pitchType];
+                                const metrics = calculatePitchingMetrics(pitchTypeRows, pitchType);
+                                reportData.push({ ...baseRow, ...metrics });
+                            }
+                        }
+                    }
+                    
+                    processedData = reportData;
+                    
+                    log('Report generated successfully! Ready to download.', 'success');
+                    downloadBtn.classList.remove('hidden');
+                    downloadBtn.focus();
+
+                } catch (error) {
+                    log(`An error occurred: ${error.message}`, 'error');
+                    console.error(error);
+                } finally {
+                    processBtn.disabled = false;
+                    processBtnText.textContent = 'Generate Report';
+                    spinner.classList.add('hidden');
+                }
+            }
+
+            function readFile(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const text = event.target.result;
+                            const data = parseCSV(text);
+                            resolve({ data });
+                        } catch (e) {
+                            reject(new Error(`Failed to parse ${file.name}: ${e.message}`));
+                        }
+                    };
+                    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+                    reader.readAsText(file);
+                });
+            }
+            
+            function parseCSV(text) {
+                const lines = text.trim().split(/\r?\n/);
+                if (lines.length < 2) return [];
+
+                const parseLine = (line) => {
+                    const values = [];
+                    let currentVal = '';
+                    let inQuotes = false;
+                    for (let i = 0; i < line.length; i++) {
+                        const char = line[i];
+                        if (char === '"') {
+                            if (inQuotes && line[i + 1] === '"') {
+                                currentVal += '"';
+                                i++;
+                            } else {
+                                inQuotes = !inQuotes;
+                            }
+                        } else if (char === ',' && !inQuotes) {
+                            values.push(currentVal.trim());
+                            currentVal = '';
+                        } else {
+                            currentVal += char;
+                        }
+                    }
+                    values.push(currentVal.trim());
+                    return values;
+                };
+
+                const headers = parseLine(lines[0]).map(h => h.trim().replace(/"/g, ''));
+                
+                const data = lines.slice(1).map(line => {
+                    if (!line) return null;
+                    const values = parseLine(line);
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = values[index] ? values[index].replace(/"/g, '') : '';
+                    });
+                    return row;
+                }).filter(Boolean);
+
+                return data;
+            }
+
+             function groupData(data, key) {
+                return data.reduce((acc, row) => {
+                    const groupKey = row[key];
+                    if (groupKey) {
+                        if (!acc[groupKey]) {
+                            acc[groupKey] = [];
+                        }
+                        acc[groupKey].push(row);
+                    }
+                    return acc;
+                }, {});
+            }
+
+            function groupDataByPlayerAndPractice(data) {
+                 return data.reduce((acc, row) => {
+                    const playerName = row.Batter || row.Pitcher;
+                    const practiceType = row.PracticeType;
+                    if (playerName && practiceType) {
+                        const groupKey = `${playerName}|${practiceType}`;
+                        if (!acc[groupKey]) {
+                            acc[groupKey] = [];
+                        }
+                        acc[groupKey].push(row);
+                    }
+                    return acc;
+                }, {});
+            }
+
+            // --- METRIC CALCULATION FUNCTIONS ---
+            
+            function calculateHittingMetrics(rows) {
+                const exitSpeeds = rows.map(r => parseFloat(r.ExitSpeed)).filter(v => !isNaN(v));
+                const angles = rows.map(r => parseFloat(r.Angle)).filter(v => !isNaN(v));
+                
+                const validHitRows = rows.filter(r => {
+                    const exitSpeed = parseFloat(r.ExitSpeed);
+                    const angle = parseFloat(r.Angle);
+                    return !isNaN(exitSpeed) && !isNaN(angle);
+                });
+
+                const peakEV = exitSpeeds.length > 0 ? Math.max(...exitSpeeds) : 0;
+
+                const sortedSpeeds = [...exitSpeeds].sort((a, b) => b - a);
+                const top50PercentCount = Math.ceil(sortedSpeeds.length / 2);
+                const top50Speeds = sortedSpeeds.slice(0, top50PercentCount);
+                let ev50 = 0;
+                if (top50Speeds.length > 0) {
+                    const sumOfTop50 = top50Speeds.reduce((acc, speed) => acc + speed, 0);
+                    ev50 = sumOfTop50 / top50Speeds.length;
+                }
+
+                const idealAngleHits = angles.filter(a => a >= 0 && a <= 30).length;
+                const totalValidAngleHits = angles.length;
+                const launchAnglePercent = totalValidAngleHits > 0 ? (idealAngleHits / totalValidAngleHits) * 100 : 0;
+
+                const hardHits = exitSpeeds.filter(s => s > 85).length;
+                const totalHitsForHardHitCalc = exitSpeeds.length;
+                const hardHitPercent = totalHitsForHardHitCalc > 0 ? (hardHits / totalHitsForHardHitCalc) * 100 : 0;
+
+                const barrelHits = validHitRows.filter(r => {
+                    const exitSpeed = parseFloat(r.ExitSpeed);
+                    const angle = parseFloat(r.Angle);
+                    return exitSpeed > 85 && angle >= 0 && angle <= 30;
+                }).length;
+                const totalHitsForBarrelCalc = validHitRows.length;
+                const barrelPercent = totalHitsForBarrelCalc > 0 ? (barrelHits / totalHitsForBarrelCalc) * 100 : 0;
+
+                return {
+                    'Peak Exit Velocity': peakEV.toFixed(1),
+                    'EV 50': ev50.toFixed(1),
+                    'Launch Angle (0-30%)': `${launchAnglePercent.toFixed(1)}%`,
+                    'Hard Hit %': `${hardHitPercent.toFixed(1)}%`,
+                    'Barrel %': `${barrelPercent.toFixed(1)}%`
+                };
+            }
+
+            function calculatePitchingMetrics(rows, pitchType) {
+                const relSpeeds = rows.map(r => parseFloat(r.RelSpeed)).filter(v => !isNaN(v));
+                const ivbs = rows.map(r => parseFloat(r.InducedVertBreak)).filter(v => !isNaN(v));
+                const hbs = rows.map(r => parseFloat(r.HorzBreak)).filter(v => !isNaN(v));
+                
+                const validPitchRows = rows.filter(r => {
+                    const side = parseFloat(r.PlateLocSide);
+                    const height = parseFloat(r.PlateLocHeight);
+                    return !isNaN(side) && !isNaN(height);
+                });
+
+                const peakVelo = relSpeeds.length > 0 ? Math.max(...relSpeeds) : 0;
+                
+                let avgVelo = 0;
+                if(relSpeeds.length > 0) {
+                    avgVelo = relSpeeds.reduce((acc, speed) => acc + speed, 0) / relSpeeds.length;
+                }
+
+                let avgIVB = 0;
+                if(ivbs.length > 0) {
+                    avgIVB = ivbs.reduce((acc, val) => acc + val, 0) / ivbs.length;
+                }
+
+                let avgHB = 0;
+                if(hbs.length > 0) {
+                    avgHB = hbs.reduce((acc, val) => acc + val, 0) / hbs.length;
+                }
+                
+                const strikes = validPitchRows.filter(r => {
+                    const side = parseFloat(r.PlateLocSide);
+                    const height = parseFloat(r.PlateLocHeight);
+                    return side >= -0.708 && side <= 0.708 && height >= 1.5 && height <= 3.5;
+                }).length;
+                const totalPitchesForStrikeCalc = validPitchRows.length;
+                const strikePercent = totalPitchesForStrikeCalc > 0 ? (strikes / totalPitchesForStrikeCalc) * 100 : 0;
+
+                return {
+                    'TaggedPitchType': pitchType,
+                    'Peak Velocity': peakVelo.toFixed(1),
+                    'Average Velocity': avgVelo.toFixed(1),
+                    'Average IVB': avgIVB.toFixed(1),
+                    'Average HB': avgHB.toFixed(1),
+                    'Strike %': `${strikePercent.toFixed(1)}%`
+                };
+            }
+
+            function downloadCSV(data, headers, filename) {
+                if (!data || data.length === 0) {
+                    log('No data available to download.', 'error');
+                    return;
+                }
+                
+                const csvRows = [headers.join(',')];
+
+                data.forEach(row => {
+                    const values = headers.map(header => {
+                        const val = row[header] !== undefined ? row[header] : '';
+                        const escaped = ('' + val).replace(/"/g, '""');
+                        return `"${escaped}"`;
+                    });
+                    csvRows.push(values.join(','));
+                });
+
+                const csvString = csvRows.join('\n');
+                const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+                
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                log('Download started.', 'info');
+            }
+
+            function log(message, type = 'info') {
+                const colorClasses = {
+                    info: 'text-gray-700 bg-gray-100',
+                    success: 'text-green-700 bg-green-100',
+                    error: 'text-red-700 bg-red-100',
+                };
+                statusDiv.innerHTML = `<p class="${colorClasses[type]} p-3 rounded-md">${message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
