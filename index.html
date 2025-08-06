@@ -67,7 +67,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // Element references
+            // --- Element References ---
             const csvFilesInput = document.getElementById('csvFiles');
             const fileList = document.getElementById('fileList');
             const processBtn = document.getElementById('processBtn');
@@ -76,17 +76,28 @@
             const downloadBtn = document.getElementById('downloadBtn');
             const statusDiv = document.getElementById('status');
 
+            // --- Global State Variables ---
             let processedData = null;
+            
+            // Define the full, static list of headers for the final CSV output.
+            const PITCH_TYPES = ['Fastball', 'Sinker', 'Slider', 'CurveBall', 'ChangeUp', 'Splitter'];
+            const PITCHING_METRICS = ['Peak_Velocity', 'Average_Velocity', 'Average_IVB', 'Average_HB', 'Strike_%', 'Count'];
+            
             let finalHeaders = [
-                'Player', 'Date', 'Practice Type', 
+                'Last_Name', 'First_Name', 'Appointment_ID', 'Date', 'Practice_Type', 
                 // Hitting Headers
-                'Peak Exit Velocity', 'EV 50', 'Launch Angle (0-30%)', 'Hard Hit %', 'Barrel %',
-                // Pitching Headers
-                'TaggedPitchType', 'Peak Velocity', 'Average Velocity', 'Average IVB', 'Average HB', 'Strike %'
+                'Peak_Exit_Velocity', 'EV_50', 'Launch_Angle_(0-30%)', 'Hard_Hit_%', 'Barrel_%'
             ];
 
-            // --- Event Listeners ---
+            // Dynamically create the 36 pitching headers.
+            PITCH_TYPES.forEach(pitchType => {
+                PITCHING_METRICS.forEach(metric => {
+                    finalHeaders.push(`${pitchType}_${metric}`);
+                });
+            });
 
+
+            // --- Event Listeners ---
             csvFilesInput.addEventListener('change', () => {
                 if (csvFilesInput.files.length > 0) {
                     fileList.textContent = `${csvFilesInput.files.length} file(s) selected.`;
@@ -109,10 +120,6 @@
             });
 
             // --- Core Functions ---
-
-            /**
-             * Main handler to read, combine, and process CSV files into a report.
-             */
             async function handleReportGeneration() {
                 const files = csvFilesInput.files;
                 if (files.length === 0) {
@@ -143,34 +150,32 @@
 
                     for (const groupKey in groupedByPlayerAndPractice) {
                         const playerRows = groupedByPlayerAndPractice[groupKey];
-                        const playerName = playerRows[0].Batter || playerRows[0].Pitcher;
-                        const practiceType = playerRows[0]?.PracticeType?.toLowerCase() || 'unknown';
+                        const rawPlayerName = playerRows[0].Batter || playerRows[0].Pitcher;
+                        const practiceType = playerRows[0]?.PracticeType || 'unknown';
                         const date = playerRows[0]?.Date || '';
 
-                        const baseRow = {
-                            'Player': playerName,
-                            'Date': date,
-                            'Practice Type': playerRows[0]?.PracticeType || '',
-                            'Peak Exit Velocity': '', 'EV 50': '', 'Launch Angle (0-30%)': '', 'Hard Hit %': '', 'Barrel %': '',
-                            'TaggedPitchType': '', 'Peak Velocity': '', 'Average Velocity': '', 'Average IVB': '', 'Average HB': '', 'Strike %': ''
-                        };
+                        // Parse the player name into Last Name, First Name, and Appointment ID
+                        const { lastName, firstName, appointmentId } = parsePlayerName(rawPlayerName);
 
-                        if (practiceType === 'hitting') {
+                        // Create a blank template row with all possible columns.
+                        const baseRow = {};
+                        finalHeaders.forEach(h => baseRow[h] = '');
+                        baseRow.Last_Name = lastName;
+                        baseRow.First_Name = firstName;
+                        baseRow.Appointment_ID = appointmentId;
+                        baseRow.Date = date;
+                        baseRow.Practice_Type = practiceType;
+
+                        if (practiceType.toLowerCase() === 'hitting') {
                             const metrics = calculateHittingMetrics(playerRows);
                             reportData.push({ ...baseRow, ...metrics });
                         } else {
-                            const groupedByPitchType = groupData(playerRows, 'TaggedPitchType');
-                            for (const pitchType in groupedByPitchType) {
-                                if (!pitchType) continue; // Skip if pitch type is empty
-                                const pitchTypeRows = groupedByPitchType[pitchType];
-                                const metrics = calculatePitchingMetrics(pitchTypeRows, pitchType);
-                                reportData.push({ ...baseRow, ...metrics });
-                            }
+                            const metrics = calculatePitchingMetrics(playerRows);
+                            reportData.push({ ...baseRow, ...metrics });
                         }
                     }
                     
                     processedData = reportData;
-                    
                     log('Report generated successfully! Ready to download.', 'success');
                     downloadBtn.classList.remove('hidden');
                     downloadBtn.focus();
@@ -244,6 +249,53 @@
 
                 return data;
             }
+            
+            /**
+             * Parses a player's full name string into component parts.
+             * Handles formats like "LastName, FirstName#ID", "LastName, FirstName12345", "LastName, FirstName", and "LastName".
+             * @param {string} fullName - The raw name string from the CSV.
+             * @returns {{lastName: string, firstName: string, appointmentId: string}}
+             */
+            function parsePlayerName(fullName) {
+                if (!fullName) {
+                    return { lastName: '', firstName: '', appointmentId: '' };
+                }
+
+                // Split by comma first to separate Last Name from the rest
+                const nameSplit = fullName.split(',');
+                const lastName = nameSplit[0] ? nameSplit[0].trim() : '';
+                
+                // If there's nothing after the comma, we're done.
+                if (nameSplit.length < 2 || !nameSplit[1]) {
+                    return { lastName, firstName: '', appointmentId: '' };
+                }
+
+                let postCommaPart = nameSplit[1].trim();
+                let firstName = '';
+                let appointmentId = '';
+
+                // Check for a '#' first, as it's an explicit delimiter
+                if (postCommaPart.includes('#')) {
+                    const idSplit = postCommaPart.split('#');
+                    firstName = idSplit[0].trim();
+                    appointmentId = idSplit[1] || '';
+                } else {
+                    // If no '#', find the first digit to split First Name and Appointment ID
+                    // This regex finds the last block of non-digits (the name) and the first block of digits (the ID).
+                    const match = postCommaPart.match(/^(.*\D)?(\d+.*)$/);
+                    if (match) {
+                        // e.g., "John12345" or "John Jr.12345"
+                        firstName = match[1] ? match[1].trim() : '';
+                        appointmentId = match[2] ? match[2].trim() : '';
+                    } else {
+                        // No digits found, so the whole part is the first name. e.g., "John"
+                        firstName = postCommaPart;
+                        appointmentId = '';
+                    }
+                }
+
+                return { lastName, firstName, appointmentId };
+            }
 
              function groupData(data, key) {
                 return data.reduce((acc, row) => {
@@ -279,11 +331,7 @@
                 const exitSpeeds = rows.map(r => parseFloat(r.ExitSpeed)).filter(v => !isNaN(v));
                 const angles = rows.map(r => parseFloat(r.Angle)).filter(v => !isNaN(v));
                 
-                const validHitRows = rows.filter(r => {
-                    const exitSpeed = parseFloat(r.ExitSpeed);
-                    const angle = parseFloat(r.Angle);
-                    return !isNaN(exitSpeed) && !isNaN(angle);
-                });
+                const validHitRows = rows.filter(r => !isNaN(parseFloat(r.ExitSpeed)) && !isNaN(parseFloat(r.Angle)));
 
                 const peakEV = exitSpeeds.length > 0 ? Math.max(...exitSpeeds) : 0;
 
@@ -292,79 +340,87 @@
                 const top50Speeds = sortedSpeeds.slice(0, top50PercentCount);
                 let ev50 = 0;
                 if (top50Speeds.length > 0) {
-                    const sumOfTop50 = top50Speeds.reduce((acc, speed) => acc + speed, 0);
-                    ev50 = sumOfTop50 / top50Speeds.length;
+                    ev50 = top50Speeds.reduce((acc, speed) => acc + speed, 0) / top50Speeds.length;
                 }
 
                 const idealAngleHits = angles.filter(a => a >= 0 && a <= 30).length;
-                const totalValidAngleHits = angles.length;
-                const launchAnglePercent = totalValidAngleHits > 0 ? (idealAngleHits / totalValidAngleHits) * 100 : 0;
+                const launchAnglePercent = angles.length > 0 ? (idealAngleHits / angles.length) * 100 : 0;
 
                 const hardHits = exitSpeeds.filter(s => s > 85).length;
-                const totalHitsForHardHitCalc = exitSpeeds.length;
-                const hardHitPercent = totalHitsForHardHitCalc > 0 ? (hardHits / totalHitsForHardHitCalc) * 100 : 0;
+                const hardHitPercent = exitSpeeds.length > 0 ? (hardHits / exitSpeeds.length) * 100 : 0;
 
-                const barrelHits = validHitRows.filter(r => {
-                    const exitSpeed = parseFloat(r.ExitSpeed);
-                    const angle = parseFloat(r.Angle);
-                    return exitSpeed > 85 && angle >= 0 && angle <= 30;
-                }).length;
-                const totalHitsForBarrelCalc = validHitRows.length;
-                const barrelPercent = totalHitsForBarrelCalc > 0 ? (barrelHits / totalHitsForBarrelCalc) * 100 : 0;
+                const barrelHits = validHitRows.filter(r => parseFloat(r.ExitSpeed) > 85 && parseFloat(r.Angle) >= 0 && parseFloat(r.Angle) <= 30).length;
+                const barrelPercent = validHitRows.length > 0 ? (barrelHits / validHitRows.length) * 100 : 0;
 
                 return {
-                    'Peak Exit Velocity': peakEV.toFixed(1),
-                    'EV 50': ev50.toFixed(1),
-                    'Launch Angle (0-30%)': `${launchAnglePercent.toFixed(1)}%`,
-                    'Hard Hit %': `${hardHitPercent.toFixed(1)}%`,
-                    'Barrel %': `${barrelPercent.toFixed(1)}%`
+                    'Peak_Exit_Velocity': peakEV.toFixed(1),
+                    'EV_50': ev50.toFixed(1),
+                    'Launch_Angle_(0-30%)': `${launchAnglePercent.toFixed(1)}%`,
+                    'Hard_Hit_%': `${hardHitPercent.toFixed(1)}%`,
+                    'Barrel_%': `${barrelPercent.toFixed(1)}%`
                 };
             }
 
-            function calculatePitchingMetrics(rows, pitchType) {
-                const relSpeeds = rows.map(r => parseFloat(r.RelSpeed)).filter(v => !isNaN(v));
-                const ivbs = rows.map(r => parseFloat(r.InducedVertBreak)).filter(v => !isNaN(v));
-                const hbs = rows.map(r => parseFloat(r.HorzBreak)).filter(v => !isNaN(v));
-                
-                const validPitchRows = rows.filter(r => {
-                    const side = parseFloat(r.PlateLocSide);
-                    const height = parseFloat(r.PlateLocHeight);
-                    return !isNaN(side) && !isNaN(height);
+            function calculatePitchingMetrics(rows) {
+                const groupedByPitchType = groupData(rows, 'TaggedPitchType');
+                const allMetrics = {};
+
+                // Iterate over the defined list of pitch types to ensure all columns are created.
+                PITCH_TYPES.forEach(pitchType => {
+                    const pitchTypeRows = groupedByPitchType[pitchType] || [];
+                    
+                    const relSpeeds = pitchTypeRows.map(r => parseFloat(r.RelSpeed)).filter(v => !isNaN(v));
+                    const ivbs = pitchTypeRows.map(r => parseFloat(r.InducedVertBreak)).filter(v => !isNaN(v));
+                    const hbs = pitchTypeRows.map(r => parseFloat(r.HorzBreak)).filter(v => !isNaN(v));
+                    const validStrikeZoneRows = pitchTypeRows.filter(r => !isNaN(parseFloat(r.PlateLocSide)) && !isNaN(parseFloat(r.PlateLocHeight)));
+
+                    // If there's no data for this pitch type, all metrics will be blank.
+                    if (pitchTypeRows.length === 0) {
+                        PITCHING_METRICS.forEach(metric => {
+                            allMetrics[`${pitchType}_${metric}`] = '';
+                        });
+                        return; // Continue to the next pitch type
+                    }
+
+                    // Count
+                    allMetrics[`${pitchType}_Count`] = pitchTypeRows.length;
+
+                    // Peak Velocity
+                    const peakVelo = relSpeeds.length > 0 ? Math.max(...relSpeeds) : 0;
+                    allMetrics[`${pitchType}_Peak_Velocity`] = peakVelo.toFixed(1);
+
+                    // Average Velocity
+                    let avgVelo = 0;
+                    if(relSpeeds.length > 0) {
+                        avgVelo = relSpeeds.reduce((a, b) => a + b, 0) / relSpeeds.length;
+                    }
+                    allMetrics[`${pitchType}_Average_Velocity`] = avgVelo.toFixed(1);
+
+                    // Average IVB
+                    let avgIVB = 0;
+                    if(ivbs.length > 0) {
+                        avgIVB = ivbs.reduce((a, b) => a + b, 0) / ivbs.length;
+                    }
+                    allMetrics[`${pitchType}_Average_IVB`] = avgIVB.toFixed(1);
+
+                    // Average HB
+                    let avgHB = 0;
+                    if(hbs.length > 0) {
+                        avgHB = hbs.reduce((a, b) => a + b, 0) / hbs.length;
+                    }
+                    allMetrics[`${pitchType}_Average_HB`] = avgHB.toFixed(1);
+                    
+                    // Strike %
+                    const strikes = validStrikeZoneRows.filter(r => {
+                        const side = parseFloat(r.PlateLocSide);
+                        const height = parseFloat(r.PlateLocHeight);
+                        return side >= -0.708 && side <= 0.708 && height >= 1.5 && height <= 3.5;
+                    }).length;
+                    const strikePercent = validStrikeZoneRows.length > 0 ? (strikes / validStrikeZoneRows.length) * 100 : 0;
+                    allMetrics[`${pitchType}_Strike_%`] = `${strikePercent.toFixed(1)}%`;
                 });
 
-                const peakVelo = relSpeeds.length > 0 ? Math.max(...relSpeeds) : 0;
-                
-                let avgVelo = 0;
-                if(relSpeeds.length > 0) {
-                    avgVelo = relSpeeds.reduce((acc, speed) => acc + speed, 0) / relSpeeds.length;
-                }
-
-                let avgIVB = 0;
-                if(ivbs.length > 0) {
-                    avgIVB = ivbs.reduce((acc, val) => acc + val, 0) / ivbs.length;
-                }
-
-                let avgHB = 0;
-                if(hbs.length > 0) {
-                    avgHB = hbs.reduce((acc, val) => acc + val, 0) / hbs.length;
-                }
-                
-                const strikes = validPitchRows.filter(r => {
-                    const side = parseFloat(r.PlateLocSide);
-                    const height = parseFloat(r.PlateLocHeight);
-                    return side >= -0.708 && side <= 0.708 && height >= 1.5 && height <= 3.5;
-                }).length;
-                const totalPitchesForStrikeCalc = validPitchRows.length;
-                const strikePercent = totalPitchesForStrikeCalc > 0 ? (strikes / totalPitchesForStrikeCalc) * 100 : 0;
-
-                return {
-                    'TaggedPitchType': pitchType,
-                    'Peak Velocity': peakVelo.toFixed(1),
-                    'Average Velocity': avgVelo.toFixed(1),
-                    'Average IVB': avgIVB.toFixed(1),
-                    'Average HB': avgHB.toFixed(1),
-                    'Strike %': `${strikePercent.toFixed(1)}%`
-                };
+                return allMetrics;
             }
 
             function downloadCSV(data, headers, filename) {
@@ -402,7 +458,7 @@
             function log(message, type = 'info') {
                 const colorClasses = {
                     info: 'text-gray-700 bg-gray-100',
-                    success: 'text-green-700 bg-green-100',
+                    success: 'text-green-7-100',
                     error: 'text-red-700 bg-red-100',
                 };
                 statusDiv.innerHTML = `<p class="${colorClasses[type]} p-3 rounded-md">${message}</p>`;
