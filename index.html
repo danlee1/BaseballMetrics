@@ -33,35 +33,60 @@
     <div class="container mx-auto p-4 sm:p-6 lg:p-8 max-w-4xl">
         <header class="text-center mb-8">
             <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Player Report Generator</h1>
-            <p class="mt-2 text-md text-gray-600">Upload CSV files to generate a summarized player performance report.</p>
+            <p class="mt-2 text-md text-gray-600">A two-part tool to process and merge player data.</p>
         </header>
 
-        <main class="space-y-6">
-            <!-- Step 1: File Upload -->
+        <main class="space-y-8">
+            <!-- Part 1: Generate Initial Report -->
             <div class="bg-white p-6 rounded-lg shadow-md">
-                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Step 1: Upload CSV Files</h2>
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Part 1: Generate Player Metrics Report</h2>
                 <div class="mt-4">
                     <label for="csvFiles" class="file-label cursor-pointer w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
                         <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                        <span>Select Files</span>
+                        <span>Select Hitting/Pitching Files</span>
                     </label>
                     <input type="file" id="csvFiles" class="hidden" multiple accept=".csv">
                     <p id="fileList" class="mt-4 text-sm text-gray-500">No files selected.</p>
                 </div>
-            </div>
-
-            <!-- Step 2: Process and Download -->
-            <div class="bg-white p-6 rounded-lg shadow-md">
-                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Step 2: Generate & Download Report</h2>
-                <div class="flex flex-col sm:flex-row gap-4 mt-4">
-                    <button id="processBtn" class="w-full sm:w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed inline-flex items-center justify-center">
-                        <span id="processBtnText">Generate Report</span>
+                 <div class="flex flex-col sm:flex-row gap-4 mt-4">
+                    <button id="processBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed inline-flex items-center justify-center">
+                        <span id="processBtnText">Generate & Download Report</span>
                         <div id="spinner" class="spinner border-4 border-white rounded-full ml-3 hidden"></div>
                     </button>
-                    <button id="downloadBtn" class="w-full sm:w-1/2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md hidden">Download Report</button>
                 </div>
-                <div id="status" class="mt-4 p-4 bg-gray-50 rounded-lg text-sm min-h-[50px]"></div>
             </div>
+            
+            <!-- Part 2: Join Files -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Part 2: Join and Create Final Report</h2>
+                <p class="text-sm text-gray-600 mb-4">Upload your corrected report from Part 1 and the second CSV file to join them.</p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                    <div>
+                        <label for="metricsFile" class="file-label cursor-pointer w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
+                            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            <span>Upload Metrics Report</span>
+                        </label>
+                        <input type="file" id="metricsFile" class="hidden" accept=".csv">
+                        <p id="metricsFileList" class="mt-4 text-sm text-gray-500">No file selected.</p>
+                    </div>
+                    <div>
+                        <label for="joinFile" class="file-label cursor-pointer w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
+                            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4M4 7v10"></path></svg>
+                            <span>Upload Athletic Data</span>
+                        </label>
+                        <input type="file" id="joinFile" class="hidden" accept=".csv">
+                        <p id="joinFileList" class="mt-4 text-sm text-gray-500">No file selected.</p>
+                    </div>
+                </div>
+
+                 <div class="flex flex-col sm:flex-row gap-4 mt-6">
+                    <button id="joinBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">Join and Download Final Report</button>
+                </div>
+            </div>
+
+            <!-- Status Area -->
+            <div id="status" class="mt-4 p-4 bg-gray-50 rounded-lg text-sm min-h-[50px]"></div>
         </main>
     </div>
 
@@ -73,93 +98,74 @@
             const processBtn = document.getElementById('processBtn');
             const processBtnText = document.getElementById('processBtnText');
             const spinner = document.getElementById('spinner');
-            const downloadBtn = document.getElementById('downloadBtn');
             const statusDiv = document.getElementById('status');
-
-            // --- Global State Variables ---
-            let processedData = null;
             
-            // Define the full, static list of headers for the final CSV output.
+            const metricsFileInput = document.getElementById('metricsFile');
+            const metricsFileList = document.getElementById('metricsFileList');
+            const joinFileInput = document.getElementById('joinFile');
+            const joinFileList = document.getElementById('joinFileList');
+            const joinBtn = document.getElementById('joinBtn');
+
+            // --- Global Constants ---
             const PITCH_TYPES = ['Fastball', 'Sinker', 'Slider', 'CurveBall', 'ChangeUp', 'Splitter'];
             const PITCHING_METRICS = ['Peak_Velocity', 'Average_Velocity', 'Average_IVB', 'Average_HB', 'Strike_%', 'Count'];
+            const JOIN_FILE_HEADERS_WITH_UNDERSCORE = ['Jersey_#', 'Team_Name', '10_yd_Sprint', 'Flying_30', '60_Yd_Dash', '5-10-5_Shuttle', 'OF_Velo', 'INF_Velo', 'Pop_Time', 'Grip_Strength_Left', 'Grip_Strength_Right', 'Vertical_Jump'];
             
-            let finalHeaders = [
+            let part1Headers = [
                 'Last_Name', 'First_Name', 'Appointment_ID', 'Date', 'Practice_Type', 
-                // Hitting Headers
                 'Peak_Exit_Velocity', 'EV_50', 'Launch_Angle_(0-30%)', 'Hard_Hit_%', 'Barrel_%'
             ];
-
-            // Dynamically create the 36 pitching headers.
             PITCH_TYPES.forEach(pitchType => {
                 PITCHING_METRICS.forEach(metric => {
-                    finalHeaders.push(`${pitchType}_${metric}`);
+                    part1Headers.push(`${pitchType}_${metric}`);
                 });
             });
 
-
             // --- Event Listeners ---
             csvFilesInput.addEventListener('change', () => {
-                if (csvFilesInput.files.length > 0) {
-                    fileList.textContent = `${csvFilesInput.files.length} file(s) selected.`;
-                    log('Files selected. Ready to generate report.', 'info');
-                } else {
-                    fileList.textContent = 'No files selected.';
-                }
-                downloadBtn.classList.add('hidden');
-                processedData = null;
+                fileList.textContent = csvFilesInput.files.length > 0 ? `${csvFilesInput.files.length} file(s) selected.` : 'No files selected.';
+            });
+            metricsFileInput.addEventListener('change', () => {
+                metricsFileList.textContent = metricsFileInput.files.length > 0 ? metricsFileInput.files[0].name : 'No file selected.';
+            });
+            joinFileInput.addEventListener('change', () => {
+                joinFileList.textContent = joinFileInput.files.length > 0 ? joinFileInput.files[0].name : 'No file selected.';
             });
             
-            processBtn.addEventListener('click', handleReportGeneration);
-
-            downloadBtn.addEventListener('click', () => {
-                if (processedData) {
-                    downloadCSV(processedData, finalHeaders, 'player_report.csv');
-                } else {
-                    log('No data to download. Please generate a report first.', 'error');
-                }
-            });
+            processBtn.addEventListener('click', handlePart1Generation);
+            joinBtn.addEventListener('click', handlePart2JoinAndDownload);
 
             // --- Core Functions ---
-            async function handleReportGeneration() {
+            async function handlePart1Generation() {
                 const files = csvFilesInput.files;
                 if (files.length === 0) {
-                    log('Please select at least one CSV file.', 'error');
+                    log('Please select at least one CSV file for Part 1.', 'error');
                     return;
                 }
 
                 processBtn.disabled = true;
                 processBtnText.textContent = 'Processing...';
                 spinner.classList.remove('hidden');
-                downloadBtn.classList.add('hidden');
-                log('Starting report generation...', 'info');
+                log('Starting Part 1 report generation...', 'info');
 
                 try {
                     const allFilesData = await Promise.all(Array.from(files).map(readFile));
-                    log(`Successfully read ${allFilesData.length} files.`, 'info');
-
                     let combinedData = [];
-                    allFilesData.forEach(file => {
-                        combinedData = combinedData.concat(file.data);
-                    });
-                    log(`Combined ${combinedData.length} total rows. Grouping data...`, 'info');
-
+                    allFilesData.forEach(file => combinedData = combinedData.concat(file.data));
+                    
                     const groupedByPlayerAndPractice = groupDataByPlayerAndPractice(combinedData);
-                    log(`Found ${Object.keys(groupedByPlayerAndPractice).length} unique player/practice sessions. Calculating metrics...`, 'info');
                     
                     const reportData = [];
-
                     for (const groupKey in groupedByPlayerAndPractice) {
                         const playerRows = groupedByPlayerAndPractice[groupKey];
                         const rawPlayerName = playerRows[0].Batter || playerRows[0].Pitcher;
                         const practiceType = playerRows[0]?.PracticeType || 'unknown';
                         const date = playerRows[0]?.Date || '';
 
-                        // Parse the player name into Last Name, First Name, and Appointment ID
                         const { lastName, firstName, appointmentId } = parsePlayerName(rawPlayerName);
 
-                        // Create a blank template row with all possible columns.
                         const baseRow = {};
-                        finalHeaders.forEach(h => baseRow[h] = '');
+                        part1Headers.forEach(h => baseRow[h] = '');
                         baseRow.Last_Name = lastName;
                         baseRow.First_Name = firstName;
                         baseRow.Appointment_ID = appointmentId;
@@ -175,18 +181,72 @@
                         }
                     }
                     
-                    processedData = reportData;
-                    log('Report generated successfully! Ready to download.', 'success');
-                    downloadBtn.classList.remove('hidden');
-                    downloadBtn.focus();
+                    downloadCSV(reportData, part1Headers, 'part_1_metrics_report.csv');
+                    log('Part 1 report downloaded successfully. You can now manually edit it before proceeding to Part 2.', 'success');
 
                 } catch (error) {
-                    log(`An error occurred: ${error.message}`, 'error');
+                    log(`An error occurred in Part 1: ${error.message}`, 'error');
                     console.error(error);
                 } finally {
                     processBtn.disabled = false;
-                    processBtnText.textContent = 'Generate Report';
+                    processBtnText.textContent = 'Generate & Download Report';
                     spinner.classList.add('hidden');
+                }
+            }
+
+            async function handlePart2JoinAndDownload() {
+                const metricsFile = metricsFileInput.files[0];
+                const joinFile = joinFileInput.files[0];
+
+                if (!metricsFile || !joinFile) {
+                    log('Please select both the Metrics Report and the Athletic Data file for Part 2.', 'error');
+                    return;
+                }
+
+                joinBtn.disabled = true;
+                joinBtn.textContent = 'Joining...';
+                log('Reading files for joining...', 'info');
+
+                try {
+                    const [metricsData, joinData] = await Promise.all([readFile(metricsFile), readFile(joinFile)]);
+                    log('Files read. Merging data...', 'info');
+
+                    const joinMap = new Map();
+                    joinData.data.forEach(row => {
+                        const lastName = row['Last Name']?.trim().toLowerCase();
+                        const firstName = row['First Name']?.trim().toLowerCase();
+                        if (lastName && firstName) {
+                            joinMap.set(`${lastName}|${firstName}`, row);
+                        }
+                    });
+
+                    const finalReport = metricsData.data.map(metricsRow => {
+                        const lastName = metricsRow.Last_Name?.trim().toLowerCase();
+                        const firstName = metricsRow.First_Name?.trim().toLowerCase();
+                        const key = `${lastName}|${firstName}`;
+                        
+                        const mergedRow = { ...metricsRow };
+
+                        if (joinMap.has(key)) {
+                            const joinRow = joinMap.get(key);
+                            JOIN_FILE_HEADERS_WITH_UNDERSCORE.forEach(headerWithUnderscore => {
+                                const headerWithSpace = headerWithUnderscore.replace(/_/g, ' ');
+                                mergedRow[headerWithUnderscore] = joinRow[headerWithSpace] || '';
+                            });
+                        }
+                        return mergedRow;
+                    });
+                    
+                    const finalHeaders = [...part1Headers, ...JOIN_FILE_HEADERS_WITH_UNDERSCORE];
+                    downloadCSV(finalReport, finalHeaders, 'final_joined_report.csv');
+                    log('Final report downloaded successfully!', 'success');
+
+                } catch (error) {
+                    log(`An error occurred during the join process: ${error.message}`, 'error');
+                    console.error(error);
+                } finally {
+                    joinBtn.disabled = false;
+                    joinBtn.textContent = 'Join and Download Final Report';
                 }
             }
 
@@ -250,50 +310,28 @@
                 return data;
             }
             
-            /**
-             * Parses a player's full name string into component parts.
-             * Handles formats like "LastName, FirstName#ID", "LastName, FirstName12345", "LastName, FirstName", and "LastName".
-             * @param {string} fullName - The raw name string from the CSV.
-             * @returns {{lastName: string, firstName: string, appointmentId: string}}
-             */
             function parsePlayerName(fullName) {
-                if (!fullName) {
-                    return { lastName: '', firstName: '', appointmentId: '' };
-                }
-
-                // Split by comma first to separate Last Name from the rest
+                if (!fullName) return { lastName: '', firstName: '', appointmentId: '' };
                 const nameSplit = fullName.split(',');
                 const lastName = nameSplit[0] ? nameSplit[0].trim() : '';
-                
-                // If there's nothing after the comma, we're done.
-                if (nameSplit.length < 2 || !nameSplit[1]) {
-                    return { lastName, firstName: '', appointmentId: '' };
-                }
-
+                if (nameSplit.length < 2 || !nameSplit[1]) return { lastName, firstName: '', appointmentId: '' };
                 let postCommaPart = nameSplit[1].trim();
                 let firstName = '';
                 let appointmentId = '';
-
-                // Check for a '#' first, as it's an explicit delimiter
                 if (postCommaPart.includes('#')) {
                     const idSplit = postCommaPart.split('#');
                     firstName = idSplit[0].trim();
                     appointmentId = idSplit[1] || '';
                 } else {
-                    // If no '#', find the first digit to split First Name and Appointment ID
-                    // This regex finds the last block of non-digits (the name) and the first block of digits (the ID).
                     const match = postCommaPart.match(/^(.*\D)?(\d+.*)$/);
                     if (match) {
-                        // e.g., "John12345" or "John Jr.12345"
                         firstName = match[1] ? match[1].trim() : '';
                         appointmentId = match[2] ? match[2].trim() : '';
                     } else {
-                        // No digits found, so the whole part is the first name. e.g., "John"
                         firstName = postCommaPart;
                         appointmentId = '';
                     }
                 }
-
                 return { lastName, firstName, appointmentId };
             }
 
@@ -301,9 +339,7 @@
                 return data.reduce((acc, row) => {
                     const groupKey = row[key];
                     if (groupKey) {
-                        if (!acc[groupKey]) {
-                            acc[groupKey] = [];
-                        }
+                        if (!acc[groupKey]) acc[groupKey] = [];
                         acc[groupKey].push(row);
                     }
                     return acc;
@@ -316,9 +352,7 @@
                     const practiceType = row.PracticeType;
                     if (playerName && practiceType) {
                         const groupKey = `${playerName}|${practiceType}`;
-                        if (!acc[groupKey]) {
-                            acc[groupKey] = [];
-                        }
+                        if (!acc[groupKey]) acc[groupKey] = [];
                         acc[groupKey].push(row);
                     }
                     return acc;
@@ -330,28 +364,19 @@
             function calculateHittingMetrics(rows) {
                 const exitSpeeds = rows.map(r => parseFloat(r.ExitSpeed)).filter(v => !isNaN(v));
                 const angles = rows.map(r => parseFloat(r.Angle)).filter(v => !isNaN(v));
-                
                 const validHitRows = rows.filter(r => !isNaN(parseFloat(r.ExitSpeed)) && !isNaN(parseFloat(r.Angle)));
-
                 const peakEV = exitSpeeds.length > 0 ? Math.max(...exitSpeeds) : 0;
-
                 const sortedSpeeds = [...exitSpeeds].sort((a, b) => b - a);
                 const top50PercentCount = Math.ceil(sortedSpeeds.length / 2);
                 const top50Speeds = sortedSpeeds.slice(0, top50PercentCount);
                 let ev50 = 0;
-                if (top50Speeds.length > 0) {
-                    ev50 = top50Speeds.reduce((acc, speed) => acc + speed, 0) / top50Speeds.length;
-                }
-
+                if (top50Speeds.length > 0) ev50 = top50Speeds.reduce((a, b) => a + b, 0) / top50Speeds.length;
                 const idealAngleHits = angles.filter(a => a >= 0 && a <= 30).length;
                 const launchAnglePercent = angles.length > 0 ? (idealAngleHits / angles.length) * 100 : 0;
-
                 const hardHits = exitSpeeds.filter(s => s > 85).length;
                 const hardHitPercent = exitSpeeds.length > 0 ? (hardHits / exitSpeeds.length) * 100 : 0;
-
                 const barrelHits = validHitRows.filter(r => parseFloat(r.ExitSpeed) > 85 && parseFloat(r.Angle) >= 0 && parseFloat(r.Angle) <= 30).length;
                 const barrelPercent = validHitRows.length > 0 ? (barrelHits / validHitRows.length) * 100 : 0;
-
                 return {
                     'Peak_Exit_Velocity': peakEV.toFixed(1),
                     'EV_50': ev50.toFixed(1),
@@ -364,53 +389,28 @@
             function calculatePitchingMetrics(rows) {
                 const groupedByPitchType = groupData(rows, 'TaggedPitchType');
                 const allMetrics = {};
-
-                // Iterate over the defined list of pitch types to ensure all columns are created.
                 PITCH_TYPES.forEach(pitchType => {
                     const pitchTypeRows = groupedByPitchType[pitchType] || [];
-                    
+                    if (pitchTypeRows.length === 0) {
+                        PITCHING_METRICS.forEach(metric => allMetrics[`${pitchType}_${metric}`] = '');
+                        return;
+                    }
                     const relSpeeds = pitchTypeRows.map(r => parseFloat(r.RelSpeed)).filter(v => !isNaN(v));
                     const ivbs = pitchTypeRows.map(r => parseFloat(r.InducedVertBreak)).filter(v => !isNaN(v));
                     const hbs = pitchTypeRows.map(r => parseFloat(r.HorzBreak)).filter(v => !isNaN(v));
                     const validStrikeZoneRows = pitchTypeRows.filter(r => !isNaN(parseFloat(r.PlateLocSide)) && !isNaN(parseFloat(r.PlateLocHeight)));
-
-                    // If there's no data for this pitch type, all metrics will be blank.
-                    if (pitchTypeRows.length === 0) {
-                        PITCHING_METRICS.forEach(metric => {
-                            allMetrics[`${pitchType}_${metric}`] = '';
-                        });
-                        return; // Continue to the next pitch type
-                    }
-
-                    // Count
                     allMetrics[`${pitchType}_Count`] = pitchTypeRows.length;
-
-                    // Peak Velocity
                     const peakVelo = relSpeeds.length > 0 ? Math.max(...relSpeeds) : 0;
                     allMetrics[`${pitchType}_Peak_Velocity`] = peakVelo.toFixed(1);
-
-                    // Average Velocity
                     let avgVelo = 0;
-                    if(relSpeeds.length > 0) {
-                        avgVelo = relSpeeds.reduce((a, b) => a + b, 0) / relSpeeds.length;
-                    }
+                    if(relSpeeds.length > 0) avgVelo = relSpeeds.reduce((a, b) => a + b, 0) / relSpeeds.length;
                     allMetrics[`${pitchType}_Average_Velocity`] = avgVelo.toFixed(1);
-
-                    // Average IVB
                     let avgIVB = 0;
-                    if(ivbs.length > 0) {
-                        avgIVB = ivbs.reduce((a, b) => a + b, 0) / ivbs.length;
-                    }
+                    if(ivbs.length > 0) avgIVB = ivbs.reduce((a, b) => a + b, 0) / ivbs.length;
                     allMetrics[`${pitchType}_Average_IVB`] = avgIVB.toFixed(1);
-
-                    // Average HB
                     let avgHB = 0;
-                    if(hbs.length > 0) {
-                        avgHB = hbs.reduce((a, b) => a + b, 0) / hbs.length;
-                    }
+                    if(hbs.length > 0) avgHB = hbs.reduce((a, b) => a + b, 0) / hbs.length;
                     allMetrics[`${pitchType}_Average_HB`] = avgHB.toFixed(1);
-                    
-                    // Strike %
                     const strikes = validStrikeZoneRows.filter(r => {
                         const side = parseFloat(r.PlateLocSide);
                         const height = parseFloat(r.PlateLocHeight);
@@ -419,7 +419,6 @@
                     const strikePercent = validStrikeZoneRows.length > 0 ? (strikes / validStrikeZoneRows.length) * 100 : 0;
                     allMetrics[`${pitchType}_Strike_%`] = `${strikePercent.toFixed(1)}%`;
                 });
-
                 return allMetrics;
             }
 
@@ -428,9 +427,7 @@
                     log('No data available to download.', 'error');
                     return;
                 }
-                
                 const csvRows = [headers.join(',')];
-
                 data.forEach(row => {
                     const values = headers.map(header => {
                         const val = row[header] !== undefined ? row[header] : '';
@@ -439,10 +436,8 @@
                     });
                     csvRows.push(values.join(','));
                 });
-
                 const csvString = csvRows.join('\n');
                 const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-                
                 const link = document.createElement('a');
                 const url = URL.createObjectURL(blob);
                 link.setAttribute('href', url);
@@ -452,13 +447,12 @@
                 link.click();
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
-                log('Download started.', 'info');
             }
 
             function log(message, type = 'info') {
                 const colorClasses = {
                     info: 'text-gray-700 bg-gray-100',
-                    success: 'text-green-7-100',
+                    success: 'text-green-700 bg-green-100',
                     error: 'text-red-700 bg-red-100',
                 };
                 statusDiv.innerHTML = `<p class="${colorClasses[type]} p-3 rounded-md">${message}</p>`;
