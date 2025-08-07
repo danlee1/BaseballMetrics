@@ -51,6 +51,12 @@
                     <input type="file" id="csvFiles" class="hidden" multiple accept=".csv">
                     <p id="fileList" class="mt-4 text-sm text-gray-500">No files selected.</p>
                 </div>
+                <div class="mt-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="part1Underscores" class="form-checkbox h-5 w-5 text-blue-600" checked>
+                        <span class="ml-2 text-gray-700">Replace spaces with underscores in headers</span>
+                    </label>
+                </div>
                  <div class="flex flex-col sm:flex-row gap-4 mt-4">
                     <button id="processBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed inline-flex items-center justify-center">
                         <span id="processBtnText">Generate & Download Report</span>
@@ -82,6 +88,12 @@
                         <p id="joinFileList" class="mt-4 text-sm text-gray-500">No file selected.</p>
                     </div>
                 </div>
+                <div class="mt-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="part2Underscores" class="form-checkbox h-5 w-5 text-purple-600" checked>
+                        <span class="ml-2 text-gray-700">Replace spaces with underscores in athletic data headers</span>
+                    </label>
+                </div>
 
                  <div class="flex flex-col sm:flex-row gap-4 mt-6">
                     <button id="joinBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">Join and Download Final Report</button>
@@ -102,25 +114,26 @@
             const processBtnText = document.getElementById('processBtnText');
             const spinner = document.getElementById('spinner');
             const statusDiv = document.getElementById('status');
+            const part1UnderscoresCheckbox = document.getElementById('part1Underscores');
             
             const metricsFileInput = document.getElementById('metricsFile');
             const metricsFileList = document.getElementById('metricsFileList');
             const joinFileInput = document.getElementById('joinFile');
             const joinFileList = document.getElementById('joinFileList');
             const joinBtn = document.getElementById('joinBtn');
+            const part2UnderscoresCheckbox = document.getElementById('part2Underscores');
 
             // --- Global Constants ---
             const PITCH_TYPES = ['Fastball', 'Sinker', 'Slider', 'CurveBall', 'ChangeUp', 'Splitter'];
             const PITCHING_METRICS = ['Peak_Velocity', 'Average_Velocity', 'Average_IVB', 'Average_HB', 'Strike_%', 'Count'];
-            const JOIN_FILE_HEADERS_WITH_UNDERSCORE = ['Jersey_#', 'Team_Name', '10_yd_Sprint', 'Flying_30', '60_Yd_Dash', '5-10-5_Shuttle', 'OF_Velo', 'INF_Velo', 'Pop_Time', 'Grip_Strength_Left', 'Grip_Strength_Right', 'Vertical_Jump'];
             
-            let part1Headers = [
+            const basePart1Headers = [
                 'Last_Name', 'First_Name', 'Appointment_ID', 'Date', 'Practice_Type', 
                 'Peak_Exit_Velocity', 'EV_50', 'Launch_Angle_(0-30%)', 'Hard_Hit_%', 'Barrel_%'
             ];
             PITCH_TYPES.forEach(pitchType => {
                 PITCHING_METRICS.forEach(metric => {
-                    part1Headers.push(`${pitchType}_${metric}`);
+                    basePart1Headers.push(`${pitchType}_${metric}`);
                 });
             });
 
@@ -168,7 +181,7 @@
                         const { lastName, firstName, appointmentId } = parsePlayerName(rawPlayerName);
 
                         const baseRow = {};
-                        part1Headers.forEach(h => baseRow[h] = '');
+                        basePart1Headers.forEach(h => baseRow[h] = ''); // Internal keys always use underscores
                         baseRow.Last_Name = lastName;
                         baseRow.First_Name = firstName;
                         baseRow.Appointment_ID = appointmentId;
@@ -184,7 +197,10 @@
                         }
                     }
                     
-                    downloadCSV(reportData, part1Headers, 'part_1_metrics_report.csv');
+                    const useUnderscores = part1UnderscoresCheckbox.checked;
+                    const displayHeaders = useUnderscores ? basePart1Headers : basePart1Headers.map(h => h.replace(/_/g, ' '));
+                    
+                    downloadCSV(reportData, displayHeaders, 'part_1_metrics_report.csv');
                     let successMessage = 'Part 1 report downloaded successfully. You can now manually edit it before proceeding to Part 2.';
 
                     if (failed.length > 0) {
@@ -218,13 +234,19 @@
                 log('Reading files for joining...', 'info');
 
                 try {
-                    const [metricsData, joinData] = await Promise.all([readFile(metricsFile), readFile(joinFile)]);
+                    const [metricsFileData, joinFileData] = await Promise.all([readFile(metricsFile), readFile(joinFile)]);
                     log('Files read. Merging data...', 'info');
                     
                     const failedRows = [];
+                    const useUnderscores = part2UnderscoresCheckbox.checked;
+
+                    const dynamicJoinHeaders = joinFileData.headers.filter(h => 
+                        h.toLowerCase() !== 'last name' && h.toLowerCase() !== 'first name'
+                    );
+                    const finalDynamicHeaders = useUnderscores ? dynamicJoinHeaders.map(h => h.replace(/ /g, '_').replace(/#/g, '')) : dynamicJoinHeaders;
 
                     const joinMap = new Map();
-                    joinData.data.forEach(row => {
+                    joinFileData.data.forEach(row => {
                         const lastName = row['Last Name']?.trim().toLowerCase();
                         const firstName = row['First Name']?.trim().toLowerCase();
                         if (lastName && firstName) {
@@ -235,14 +257,16 @@
                         }
                     });
 
-                    const finalReport = metricsData.data.map(metricsRow => {
-                        const lastName = metricsRow.Last_Name?.trim().toLowerCase();
-                        const firstName = metricsRow.First_Name?.trim().toLowerCase();
+                    const finalReport = metricsFileData.data.map(metricsRow => {
+                        const lastNameKey = Object.keys(metricsRow).find(k => k.toLowerCase() === 'last_name') || 'Last_Name';
+                        const firstNameKey = Object.keys(metricsRow).find(k => k.toLowerCase() === 'first_name') || 'First_Name';
+                        const lastName = metricsRow[lastNameKey]?.trim().toLowerCase();
+                        const firstName = metricsRow[firstNameKey]?.trim().toLowerCase();
                         
                         if (!lastName || !firstName) {
                             metricsRow.Error_Reason = 'Missing Last_Name or First_Name in Ball Data file.';
                             failedRows.push(metricsRow);
-                            return null; // This row will be filtered out
+                            return null;
                         }
 
                         const key = `${lastName}|${firstName}`;
@@ -250,20 +274,20 @@
 
                         if (joinMap.has(key)) {
                             const joinRow = joinMap.get(key);
-                            JOIN_FILE_HEADERS_WITH_UNDERSCORE.forEach(headerWithUnderscore => {
-                                const headerWithSpace = headerWithUnderscore.replace(/_/g, ' ');
-                                mergedRow[headerWithUnderscore] = joinRow[headerWithSpace] || '';
+                            dynamicJoinHeaders.forEach((headerWithSpace, index) => {
+                                const finalHeader = finalDynamicHeaders[index];
+                                mergedRow[finalHeader] = joinRow[headerWithSpace] || '';
                             });
                         }
                         return mergedRow;
-                    }).filter(Boolean); // Remove null rows that failed
+                    }).filter(Boolean);
                     
-                    const finalHeaders = [...part1Headers, ...JOIN_FILE_HEADERS_WITH_UNDERSCORE];
+                    const finalHeaders = [...metricsFileData.headers, ...finalDynamicHeaders];
                     downloadCSV(finalReport, finalHeaders, 'final_joined_report.csv');
                     
                     let successMessage = 'Final report downloaded successfully!';
                     if (failedRows.length > 0) {
-                        const errorHeaders = [...new Set(failedRows.flatMap(Object.keys))]; // Get all possible headers
+                        const errorHeaders = [...new Set(failedRows.flatMap(Object.keys))];
                         downloadCSV(failedRows, errorHeaders, 'part_2_join_errors.csv');
                         successMessage += ` An additional file with ${failedRows.length} rows that failed to join has also been downloaded.`;
                     }
@@ -284,8 +308,8 @@
                     reader.onload = (event) => {
                         try {
                             const text = event.target.result;
-                            const data = parseCSV(text);
-                            resolve({ data });
+                            const parsed = parseCSV(text);
+                            resolve(parsed);
                         } catch (e) {
                             reject(new Error(`Failed to parse ${file.name}: ${e.message}`));
                         }
@@ -297,7 +321,7 @@
             
             function parseCSV(text) {
                 const lines = text.trim().split(/\r?\n/);
-                if (lines.length < 2) return [];
+                if (lines.length < 1) return { data: [], headers: [] };
 
                 const parseLine = (line) => {
                     const values = [];
@@ -335,7 +359,7 @@
                     return row;
                 }).filter(Boolean);
 
-                return data;
+                return { data, headers };
             }
             
             function parsePlayerName(fullName) {
@@ -457,7 +481,6 @@
 
             function downloadCSV(data, headers, filename) {
                 if (!data || data.length === 0) {
-                    // Don't log for empty error files, just return.
                     if (filename.includes('error')) return;
                     log('No data available to download.', 'error');
                     return;
@@ -465,7 +488,10 @@
                 const csvRows = [headers.join(',')];
                 data.forEach(row => {
                     const values = headers.map(header => {
-                        const val = row[header] !== undefined ? row[header] : '';
+                        // For data objects, the keys are always underscore format.
+                        // We must convert the display header to the key format to find the value.
+                        const key = header.replace(/ /g, '_');
+                        const val = row[key] !== undefined ? row[key] : '';
                         const escaped = ('' + val).replace(/"/g, '""');
                         return `"${escaped}"`;
                     });
