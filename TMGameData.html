@@ -24,8 +24,6 @@
         // Babel will transpile it into regular JavaScript that the browser can understand.
         
         // --- SVG Icons ---
-        // By defining the icons directly in the code, we remove the need for external libraries,
-        // making the app more self-contained and reliable.
         const Icon = ({ className, children }) => (
             <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -64,6 +62,21 @@
             
             // Check if libraries are loaded before enabling buttons
             const libsLoaded = window.Papa && window.JSZip && window.saveAs;
+
+            // Helper function to clean and round data
+            const formatValue = (value) => {
+                if (value === undefined || value === null || value === 'undefined' || value === '') {
+                    return '';
+                }
+
+                const num = Number(value);
+                if (!isNaN(num) && String(value).trim() !== '') {
+                    // Using Math.round is better than toFixed for avoiding trailing zeros on integers
+                    return Math.round(num * 100) / 100;
+                }
+                
+                return value;
+            };
 
             // Callback for handling file selection from the input
             const handleFileChange = React.useCallback((event) => {
@@ -119,22 +132,22 @@
                                     const nameParts = pitcherName.split(',').map(s => s.trim());
                                     
                                     const newRow = {
-                                        'First Name': nameParts[1] || '',
-                                        'Last Name': nameParts[0] || '',
-                                        'Pitch Type': row['TaggedPitchType'],
-                                        'Pitch Result': row['PitchCall'],
-                                        'Pitch Velocity': row['RelSpeed'],
-                                        'Vertical Release Angle': row['VertRelAngle'],
-                                        'Horizontal Release Angle': row['HorzRelAngle'],
-                                        'Spin Rate': row['SpinRate'],
-                                        'Spin Axis': row['SpinAxis'],
-                                        'Tilt': row['Tilt'],
-                                        'Release Height': row['RelHeight'],
-                                        'Release Side': row['RelSide'],
-                                        'Extension': row['Extension'],
-                                        'Vertical Break': row['VertBreak'],
-                                        'Induced Vertical Break': row['InducedVertBreak'],
-                                        'Horizontal Break': row['HorzBreak'],
+                                        'First Name': formatValue(nameParts[1]),
+                                        'Last Name': formatValue(nameParts[0]),
+                                        'Pitch Type': formatValue(row['TaggedPitchType']),
+                                        'Pitch Result': formatValue(row['PitchCall']),
+                                        'Pitch Velocity': formatValue(row['RelSpeed']),
+                                        'Vertical Release Angle': formatValue(row['VertRelAngle']),
+                                        'Horizontal Release Angle': formatValue(row['HorzRelAngle']),
+                                        'Spin Rate': formatValue(row['SpinRate']),
+                                        'Spin Axis': formatValue(row['SpinAxis']),
+                                        'Tilt': formatValue(row['Tilt']),
+                                        'Release Height': formatValue(row['RelHeight']),
+                                        'Release Side': formatValue(row['RelSide']),
+                                        'Extension': formatValue(row['Extension']),
+                                        'Vertical Break': formatValue(row['VertBreak']),
+                                        'Induced Vertical Break': formatValue(row['InducedVertBreak']),
+                                        'Horizontal Break': formatValue(row['HorzBreak']),
                                     };
                                     pitchers[pitcherName].push(newRow);
                                 }
@@ -151,13 +164,13 @@
                                     }
                                     const nameParts = batterName.split(',').map(s => s.trim());
                                     const newRow = {
-                                        'First Name': nameParts[1] || '',
-                                        'Last Name': nameParts[0] || '',
-                                        'Exit Velocity': row['ExitSpeed'],
-                                        'Launch Angle': row['Angle'],
-                                        'Distance': row['Distance'],
-                                        'Hit Type': row['TaggedHitType'],
-                                        'Result': row['PlayResult'],
+                                        'First Name': formatValue(nameParts[1]),
+                                        'Last Name': formatValue(nameParts[0]),
+                                        'Exit Velocity': formatValue(row['ExitSpeed']),
+                                        'Launch Angle': formatValue(row['Angle']),
+                                        'Distance': formatValue(row['Distance']),
+                                        'Hit Type': formatValue(row['TaggedHitType']),
+                                        'Result': formatValue(row['PlayResult']),
                                     };
                                     batters[batterName].push(newRow);
                                 }
