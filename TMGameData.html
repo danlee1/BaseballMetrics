@@ -65,14 +65,14 @@
 
             // Helper function to clean and round data
             const formatValue = (value) => {
-                if (value === undefined || value === null || value === 'undefined' || value === '') {
+                if (value === undefined || value === null || value === 'undefined' || value === 'Undefined' || value === '') {
                     return '';
                 }
 
                 const num = Number(value);
                 if (!isNaN(num) && String(value).trim() !== '') {
-                    // Using Math.round is better than toFixed for avoiding trailing zeros on integers
-                    return Math.round(num * 100) / 100;
+                    // Use toFixed(2) to ensure two decimal places are always shown
+                    return num.toFixed(2);
                 }
                 
                 return value;
