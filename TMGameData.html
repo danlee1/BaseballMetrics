@@ -1,0 +1,310 @@
+import React, { useState, useCallback, useEffect } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { Inbox, FileText, Download, ChevronsRight, Loader2, XCircle, Users, User } from 'lucide-react';
+
+// Function to dynamically load a script with retry logic and exponential backoff
+const loadScript = (src, maxRetries = 3, delay = 1000) => {
+    return new Promise((resolve, reject) => {
+        const attemptLoad = (retriesLeft) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.async = true;
+            
+            script.onload = () => resolve(script);
+            
+            script.onerror = () => {
+                script.remove(); // Clean up the failed script tag
+                if (retriesLeft > 0) {
+                    console.warn(`Script load failed for ${src}. Retrying in ${delay / 1000}s... (${retriesLeft} retries left)`);
+                    setTimeout(() => attemptLoad(retriesLeft - 1), delay);
+                    delay *= 2; // Exponential backoff
+                } else {
+                    reject(new Error(`Script load error for ${src} after multiple retries.`));
+                }
+            };
+
+            document.body.appendChild(script);
+        };
+        attemptLoad(maxRetries);
+    });
+};
+
+
+// Main App Component
+const App = () => {
+    // State management
+    const [file, setFile] = useState(null);
+    const [pitcherFiles, setPitcherFiles] = useState(null);
+    const [batterFiles, setBatterFiles] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [libsLoaded, setLibsLoaded] = useState(false);
+
+    // Effect to check for external library loading
+    useEffect(() => {
+        // List of scripts to load from a different CDN (jsDelivr)
+        const scripts = [
+            'https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js',
+            'https://cdn.jsdelivr.net/npm/jszip@3.7.1/dist/jszip.min.js',
+            'https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js'
+        ];
+
+        // Use Promise.all to load all scripts in parallel
+        Promise.all(scripts.map(src => loadScript(src)))
+            .then(() => {
+                setLibsLoaded(true);
+            })
+            .catch(err => {
+                console.error(err);
+                setError('Failed to load essential libraries. Please check your network connection or ad-blocker and refresh the page.');
+            });
+    }, []);
+
+
+    // Callback for handling file drops
+    const onDrop = useCallback((acceptedFiles) => {
+        // Reset state on new file upload
+        setFile(null);
+        setPitcherFiles(null);
+        setBatterFiles(null);
+        setError('');
+
+        if (acceptedFiles.length > 0) {
+            const uploadedFile = acceptedFiles[0];
+            if (uploadedFile.type !== 'text/csv' && !uploadedFile.name.endsWith('.csv')) {
+                setError('Invalid file type. Please upload a CSV file.');
+                return;
+            }
+            setFile(uploadedFile);
+        }
+    }, []);
+
+    // Configure the dropzone
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+        onDrop,
+        multiple: false,
+        accept: { 'text/csv': ['.csv'] }
+    });
+
+    // Handle the main processing logic
+    const handleProcess = () => {
+        if (!file) {
+            setError('Please upload a file first.');
+            return;
+        }
+
+        setIsLoading(true);
+        setError('');
+        setPitcherFiles(null);
+        setBatterFiles(null);
+
+        window.Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => {
+                if (!results.data || results.data.length === 0) {
+                    setError('CSV file is empty or could not be read.');
+                    setIsLoading(false);
+                    return;
+                }
+
+                try {
+                    // --- PITCHER DATA PROCESSING ---
+                    const pitchers = {};
+                    results.data.forEach(row => {
+                        const pitcherName = row['Pitcher'];
+                        if (pitcherName) {
+                            if (!pitchers[pitcherName]) {
+                                pitchers[pitcherName] = [];
+                            }
+                            const nameParts = pitcherName.split(',').map(s => s.trim());
+                            
+                            const newRow = {
+                                'First Name': nameParts[1] || '',
+                                'Last Name': nameParts[0] || '',
+                                'Pitch Type': row['TaggedPitchType'],
+                                'Pitch Result': row['PitchCall'],
+                                'Pitch Velocity': row['RelSpeed'],
+                                'Vertical Release Angle': row['VertRelAngle'],
+                                'Horizontal Release Angle': row['HorzRelAngle'],
+                                'Spin Rate': row['SpinRate'],
+                                'Spin Axis': row['SpinAxis'],
+                                'Tilt': row['Tilt'],
+                                'Release Height': row['RelHeight'],
+                                'Release Side': row['RelSide'],
+                                'Extension': row['Extension'],
+                                'Vertical Break': row['VertBreak'],
+                                'Induced Vertical Break': row['InducedVertBreak'],
+                                'Horizontal Break': row['HorzBreak'],
+                            };
+                            pitchers[pitcherName].push(newRow);
+                        }
+                    });
+                    setPitcherFiles(pitchers);
+
+                    // --- BATTER DATA PROCESSING ---
+                    const batters = {};
+                    results.data.forEach(row => {
+                        const batterName = row['Batter'];
+                        if (batterName) { // Process every row that has a batter
+                            if (!batters[batterName]) {
+                                batters[batterName] = [];
+                            }
+                            const nameParts = batterName.split(',').map(s => s.trim());
+                            const newRow = {
+                                'First Name': nameParts[1] || '',
+                                'Last Name': nameParts[0] || '',
+                                'Exit Velocity': row['ExitSpeed'],
+                                'Launch Angle': row['Angle'],
+                                'Distance': row['Distance'],
+                                'Hit Type': row['TaggedHitType'],
+                                'Result': row['PlayResult'],
+                            };
+                            batters[batterName].push(newRow);
+                        }
+                    });
+                    setBatterFiles(batters);
+
+                } catch (e) {
+                    setError(`An error occurred during processing: ${e.message}. Please check if the CSV columns match the requirements.`);
+                } finally {
+                    setIsLoading(false);
+                }
+            },
+            error: (err) => {
+                setError(`CSV Parsing Error: ${err.message}`);
+                setIsLoading(false);
+            }
+        });
+    };
+
+    // Generic handler for zipping and downloading files
+    const handleDownload = async (filesToZip, zipFileName) => {
+        if (!filesToZip) return;
+        setIsLoading(true);
+
+        try {
+            const zip = new window.JSZip();
+            
+            for (const key in filesToZip) {
+                const csvString = window.Papa.unparse(filesToZip[key]);
+                const safeFileName = key.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                zip.file(`${safeFileName}.csv`, csvString);
+            }
+
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
+            window.saveAs(zipBlob, zipFileName);
+        } catch (err) {
+            setError(`Failed to create zip file: ${err.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="bg-slate-50 min-h-screen flex items-center justify-center p-4 font-sans">
+            <div className="w-full max-w-3xl bg-white rounded-xl shadow-lg p-6 md:p-8 space-y-6">
+                
+                <div className="text-center">
+                    <h1 className="text-3xl font-bold text-slate-800">Baseball Data Processor</h1>
+                    <p className="text-slate-500 mt-2">Upload your game CSV to generate separate files for each pitcher and batter.</p>
+                </div>
+
+                {/* Step 1: File Upload */}
+                <div className="space-y-4">
+                    <h2 className="text-lg font-semibold text-slate-700">Step 1: Upload CSV</h2>
+                    <div
+                        {...getRootProps()}
+                        className={`p-8 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors duration-300 ${isDragActive ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 hover:border-indigo-500'}`}
+                    >
+                        <input {...getInputProps()} />
+                        <div className="flex flex-col items-center justify-center text-slate-500">
+                           <Inbox className="w-12 h-12 mb-4 text-indigo-500" />
+                           <p>{isDragActive ? "Drop the file here..." : "Drag & drop a CSV file here, or click to select"}</p>
+                        </div>
+                    </div>
+                    {file && (
+                        <div className="flex items-center justify-center bg-slate-100 p-3 rounded-lg">
+                            <FileText className="w-5 h-5 text-indigo-600 mr-3" />
+                            <span className="font-medium text-slate-700">{file.name}</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Step 2: Process */}
+                {file && !pitcherFiles && !batterFiles && (
+                    <div className="space-y-4">
+                        <h2 className="text-lg font-semibold text-slate-700">Step 2: Process File</h2>
+                        <button
+                            onClick={handleProcess}
+                            disabled={isLoading || !libsLoaded}
+                            className="w-full flex items-center justify-center p-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105"
+                        >
+                            {isLoading ? (
+                                <><Loader2 className="w-6 h-6 animate-spin mr-2" /> Processing...</>
+                            ) : !libsLoaded ? (
+                                <><Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading Libraries...</>
+                            ) : (
+                                <><ChevronsRight className="w-6 h-6 mr-2" /> Process Data</>
+                            )}
+                        </button>
+                    </div>
+                )}
+                
+                {error && (
+                    <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md flex items-center">
+                        <XCircle className="w-5 h-5 mr-3"/>
+                        <span>{error}</span>
+                    </div>
+                )}
+
+                {/* Step 3: Download Results */}
+                {(pitcherFiles || batterFiles) && (
+                     <div className="space-y-6 pt-4 border-t border-slate-200">
+                        <h2 className="text-lg font-semibold text-slate-700">Step 3: Download Your Files</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Pitcher Download Section */}
+                            {pitcherFiles && Object.keys(pitcherFiles).length > 0 && (
+                                <div className="bg-slate-50 p-4 rounded-lg space-y-3">
+                                    <div className="flex items-center text-slate-800">
+                                        <User className="w-6 h-6 mr-2 text-indigo-500"/>
+                                        <h3 className="font-semibold">Pitcher Files ({Object.keys(pitcherFiles).length})</h3>
+                                    </div>
+                                    <button
+                                        onClick={() => handleDownload(pitcherFiles, 'pitchers.zip')}
+                                        disabled={isLoading || !libsLoaded}
+                                        className="w-full flex items-center justify-center p-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 disabled:bg-slate-400 transition-colors"
+                                    >
+                                        <Download className="w-5 h-5 mr-2" />
+                                        Download Pitchers.zip
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Batter Download Section */}
+                            {batterFiles && Object.keys(batterFiles).length > 0 && (
+                                <div className="bg-slate-50 p-4 rounded-lg space-y-3">
+                                    <div className="flex items-center text-slate-800">
+                                        <Users className="w-6 h-6 mr-2 text-sky-500"/>
+                                        <h3 className="font-semibold">Batter Files ({Object.keys(batterFiles).length})</h3>
+                                    </div>
+                                    <button
+                                        onClick={() => handleDownload(batterFiles, 'batters.zip')}
+                                        disabled={isLoading || !libsLoaded}
+                                        className="w-full flex items-center justify-center p-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 disabled:bg-slate-400 transition-colors"
+                                    >
+                                        <Download className="w-5 h-5 mr-2" />
+                                        Download Batters.zip
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+            {/* Scripts are now loaded dynamically in the useEffect hook */}
+        </div>
+    );
+};
+
+export default App;
