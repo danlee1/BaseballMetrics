@@ -130,10 +130,12 @@
                                         pitchers[pitcherName] = [];
                                     }
                                     const nameParts = pitcherName.split(',').map(s => s.trim());
+                                    // Remove numbers (graduation year) from the last name
+                                    const lastName = nameParts[0].replace(/\s*\d*$/, '').trim();
                                     
                                     const newRow = {
                                         'First Name': formatValue(nameParts[1]),
-                                        'Last Name': formatValue(nameParts[0]),
+                                        'Last Name': formatValue(lastName),
                                         'Pitch Type': formatValue(row['TaggedPitchType']),
                                         'Pitch Result': formatValue(row['PitchCall']),
                                         'Pitch Velocity': formatValue(row['RelSpeed']),
@@ -163,9 +165,12 @@
                                         batters[batterName] = [];
                                     }
                                     const nameParts = batterName.split(',').map(s => s.trim());
+                                    // Remove numbers (graduation year) from the last name
+                                    const lastName = nameParts[0].replace(/\s*\d*$/, '').trim();
+                                    
                                     const newRow = {
                                         'First Name': formatValue(nameParts[1]),
-                                        'Last Name': formatValue(nameParts[0]),
+                                        'Last Name': formatValue(lastName),
                                         'Exit Velocity': formatValue(row['ExitSpeed']),
                                         'Launch Angle': formatValue(row['Angle']),
                                         'Distance': formatValue(row['Distance']),
@@ -200,7 +205,9 @@
                     
                     for (const key in filesToZip) {
                         const csvString = window.Papa.unparse(filesToZip[key]);
-                        const safeFileName = key.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                        // Clean the key (player name) to remove grad year before creating filename
+                        const cleanKey = key.split(',')[0].replace(/\s*\d*$/, '').trim() + ", " + key.split(',')[1].trim();
+                        const safeFileName = cleanKey.replace(/[^a-z0-9]/gi, '_').toLowerCase();
                         zip.file(`${safeFileName}.csv`, csvString);
                     }
 
