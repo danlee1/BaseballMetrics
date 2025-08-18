@@ -128,7 +128,7 @@
             const PITCHING_METRICS = ['Peak_Velocity', 'Average_Velocity', 'Average_IVB', 'Average_HB', 'Strike_%', 'Count'];
             
             const basePart1Headers = [
-                'Last_Name', 'First_Name', 'Appointment_ID', 'Date', 'Practice_Type', 
+                'Last_Name', 'First_Name', 'Graduation_Year', 'Appointment_ID', 'Date', 'Practice_Type', 
                 'Peak_Exit_Velocity', 'EV_50', 'Launch_Angle_(0-30%)', 'Hard_Hit_%', 'Barrel_%'
             ];
             PITCH_TYPES.forEach(pitchType => {
@@ -178,12 +178,13 @@
                         const practiceType = playerRows[0]?.PracticeType || 'unknown';
                         const date = playerRows[0]?.Date || '';
 
-                        const { lastName, firstName, appointmentId } = parsePlayerName(rawPlayerName);
+                        const { lastName, firstName, graduationYear, appointmentId } = parsePlayerName(rawPlayerName);
 
                         const baseRow = {};
                         basePart1Headers.forEach(h => baseRow[h] = ''); // Internal keys always use underscores
                         baseRow.Last_Name = lastName;
                         baseRow.First_Name = firstName;
+                        baseRow.Graduation_Year = graduationYear;
                         baseRow.Appointment_ID = appointmentId;
                         baseRow.Date = date;
                         baseRow.Practice_Type = practiceType;
@@ -258,8 +259,8 @@
                     });
 
                     const finalReport = metricsFileData.data.map(metricsRow => {
-                        const lastNameKey = Object.keys(metricsRow).find(k => k.toLowerCase() === 'last_name') || 'Last_Name';
-                        const firstNameKey = Object.keys(metricsRow).find(k => k.toLowerCase() === 'first_name') || 'First_Name';
+                        const lastNameKey = Object.keys(metricsRow).find(k => k.toLowerCase().replace(/_/g, ' ') === 'last name') || 'Last_Name';
+                        const firstNameKey = Object.keys(metricsRow).find(k => k.toLowerCase().replace(/_/g, ' ') === 'first name') || 'First_Name';
                         const lastName = metricsRow[lastNameKey]?.trim().toLowerCase();
                         const firstName = metricsRow[firstNameKey]?.trim().toLowerCase();
                         
@@ -363,13 +364,29 @@
             }
             
             function parsePlayerName(fullName) {
-                if (!fullName) return { lastName: '', firstName: '', appointmentId: '' };
+                if (!fullName) return { lastName: '', firstName: '', graduationYear: '', appointmentId: '' };
+                
                 const nameSplit = fullName.split(',');
-                const lastName = nameSplit[0] ? nameSplit[0].trim() : '';
-                if (nameSplit.length < 2 || !nameSplit[1]) return { lastName, firstName: '', appointmentId: '' };
-                let postCommaPart = nameSplit[1].trim();
+                let preCommaPart = nameSplit[0] ? nameSplit[0].trim() : '';
+                let postCommaPart = nameSplit[1] ? nameSplit[1].trim() : '';
+
+                let lastName = '';
+                let graduationYear = '';
                 let firstName = '';
                 let appointmentId = '';
+
+                const yearMatch = preCommaPart.match(/(.*\D)?\s*(\d{4})$/);
+                if (yearMatch) {
+                    lastName = yearMatch[1] ? yearMatch[1].trim() : '';
+                    graduationYear = yearMatch[2];
+                } else {
+                    lastName = preCommaPart;
+                }
+
+                if (!postCommaPart) {
+                     return { lastName, firstName, graduationYear, appointmentId };
+                }
+
                 if (postCommaPart.includes('#')) {
                     const idSplit = postCommaPart.split('#');
                     firstName = idSplit[0].trim();
@@ -381,10 +398,9 @@
                         appointmentId = match[2] ? match[2].trim() : '';
                     } else {
                         firstName = postCommaPart;
-                        appointmentId = '';
                     }
                 }
-                return { lastName, firstName, appointmentId };
+                return { lastName, firstName, graduationYear, appointmentId };
             }
 
              function groupData(data, key) {
@@ -488,8 +504,6 @@
                 const csvRows = [headers.join(',')];
                 data.forEach(row => {
                     const values = headers.map(header => {
-                        // For data objects, the keys are always underscore format.
-                        // We must convert the display header to the key format to find the value.
                         const key = header.replace(/ /g, '_');
                         const val = row[key] !== undefined ? row[key] : '';
                         const escaped = ('' + val).replace(/"/g, '""');
