@@ -11,10 +11,13 @@
     <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
     <!-- Babel to transpile JSX in the browser -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Helper Libraries for CSV parsing and Zipping -->
+    <!-- Helper Libraries for CSV parsing, Zipping, and PDF Generation -->
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.7.1/dist/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <!-- PDF Generation Libraries -->
+    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/jspdf-autotable@3.5.23/dist/jspdf.plugin.autotable.js"></script>
 </head>
 <body class="bg-slate-50">
     <div id="root"></div>
@@ -61,7 +64,24 @@
             const [error, setError] = React.useState('');
             
             // Check if libraries are loaded before enabling buttons
-            const libsLoaded = window.Papa && window.JSZip && window.saveAs;
+            const libsLoaded = window.Papa && window.JSZip && window.saveAs && window.jspdf;
+
+            // Helper function to fetch an image and convert it to a base64 data URL
+            const getImageBase64 = async (url) => {
+                try {
+                    const response = await fetch(url);
+                    const blob = await response.blob();
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                } catch (e) {
+                    console.error("Failed to fetch or convert image:", e);
+                    return null;
+                }
+            };
 
             // Helper function to clean and round data
             const formatValue = (value) => {
@@ -71,7 +91,6 @@
 
                 const num = Number(value);
                 if (!isNaN(num) && String(value).trim() !== '') {
-                    // Use toFixed(2) to ensure two decimal places are always shown
                     return num.toFixed(2);
                 }
                 
@@ -129,15 +148,9 @@
                                     if (!pitchers[pitcherName]) {
                                         pitchers[pitcherName] = [];
                                     }
-                                    const nameParts = pitcherName.split(',').map(s => s.trim());
-                                    // Remove numbers (graduation year) from the last name
-                                    const lastName = nameParts[0].replace(/\s*\d*$/, '').trim();
                                     
                                     const newRow = {
-                                        'First Name': formatValue(nameParts[1]),
-                                        'Last Name': formatValue(lastName),
                                         'Pitch Type': formatValue(row['TaggedPitchType']),
-                                        'Pitch Result': formatValue(row['PitchCall']),
                                         'Pitch Velocity': formatValue(row['RelSpeed']),
                                         'Vertical Release Angle': formatValue(row['VertRelAngle']),
                                         'Horizontal Release Angle': formatValue(row['HorzRelAngle']),
@@ -164,13 +177,8 @@
                                     if (!batters[batterName]) {
                                         batters[batterName] = [];
                                     }
-                                    const nameParts = batterName.split(',').map(s => s.trim());
-                                    // Remove numbers (graduation year) from the last name
-                                    const lastName = nameParts[0].replace(/\s*\d*$/, '').trim();
                                     
                                     const newRow = {
-                                        'First Name': formatValue(nameParts[1]),
-                                        'Last Name': formatValue(lastName),
                                         'Exit Velocity': formatValue(row['ExitSpeed']),
                                         'Launch Angle': formatValue(row['Angle']),
                                         'Distance': formatValue(row['Distance']),
@@ -200,21 +208,60 @@
                 if (!filesToZip) return;
                 setIsLoading(true);
 
+                const logoUrl = 'https://app.curvetestcenters.com/_next/image?url=%2Flogos%2FPNG%2Fcurve-2.0-logo_full-hrz-logo-only.png&w=1920&q=75';
+                const logoBase64 = await getImageBase64(logoUrl);
+
                 try {
                     const zip = new window.JSZip();
-                    
+                    const { jsPDF } = window.jspdf;
+
                     for (const key in filesToZip) {
-                        const csvString = window.Papa.unparse(filesToZip[key]);
-                        // Clean the key (player name) to remove grad year before creating filename
-                        const cleanKey = key.split(',')[0].replace(/\s*\d*$/, '').trim() + ", " + key.split(',')[1].trim();
-                        const safeFileName = cleanKey.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                        zip.file(`${safeFileName}.csv`, csvString);
+                        // Set PDF to landscape orientation
+                        const doc = new jsPDF({ orientation: 'landscape' });
+                        const tableData = filesToZip[key];
+                        
+                        if (logoBase64) {
+                            doc.addImage(logoBase64, 'PNG', 15, 10, 60, 15);
+                        }
+
+                        const nameParts = key.split(',').map(s => s.trim());
+                        const lastName = nameParts[0].replace(/\s*\d*$/, '').trim();
+                        const firstName = nameParts[1] || '';
+                        const cleanPlayerName = `${firstName} ${lastName}`;
+
+                        doc.setFontSize(20);
+                        doc.text(cleanPlayerName, 15, 40);
+
+                        let startY = 50;
+
+                        if (zipFileName === 'pitchers.zip') {
+                            const introText = "This dataset contains your live game pitching data captured by TrackMan. It provides detailed information on every pitch you threw during live game action, including velocity, movement, spin, and location metrics. The purpose of sharing this data is to give you clear insights into your performance on the mound, highlight strengths, and help identify areas for continued development. Use these numbers to track progress over time and connect them with what you’re feeling in game situations.";
+                            doc.setFontSize(10);
+                            // Adjust text width for landscape layout
+                            const textLines = doc.splitTextToSize(introText, 267); 
+                            doc.text(textLines, 15, startY);
+                            startY += (textLines.length * 4) + 5;
+                        }
+                        
+                        const head = [Object.keys(tableData[0])];
+                        const body = tableData.map(row => Object.values(row));
+                        doc.autoTable({ 
+                            head: head, 
+                            body: body, 
+                            startY: startY,
+                            styles: { fontSize: 8 },
+                            headStyles: { fontSize: 8 }
+                        });
+
+                        const pdfBlob = doc.output('blob');
+                        const safeFileName = cleanPlayerName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                        zip.file(`${safeFileName}.pdf`, pdfBlob);
                     }
 
                     const zipBlob = await zip.generateAsync({ type: 'blob' });
                     window.saveAs(zipBlob, zipFileName);
                 } catch (err) {
-                    setError(`Failed to create zip file: ${err.message}`);
+                    setError(`Failed to create PDF/ZIP file: ${err.message}`);
                 } finally {
                     setIsLoading(false);
                 }
