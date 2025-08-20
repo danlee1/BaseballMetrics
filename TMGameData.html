@@ -15,16 +15,16 @@
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.7.1/dist/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
-    <!-- PDF Generation Libraries -->
+    <!-- PDF and Charting Libraries -->
     <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/jspdf-autotable@3.5.23/dist/jspdf.plugin.autotable.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 </head>
 <body class="bg-slate-50">
     <div id="root"></div>
 
     <script type="text/babel">
         // The entire React application is placed within this script tag with type="text/babel".
-        // Babel will transpile it into regular JavaScript that the browser can understand.
         
         // --- SVG Icons ---
         const Icon = ({ className, children }) => (
@@ -53,6 +53,7 @@
         const UsersIcon = ({ className }) => <Icon className={className}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Icon>;
         const UserIcon = ({ className }) => <Icon className={className}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Icon>;
 
+
         // Main App Component
         const App = () => {
             // State management
@@ -62,9 +63,10 @@
             const [batterFiles, setBatterFiles] = React.useState(null);
             const [isLoading, setIsLoading] = React.useState(false);
             const [error, setError] = React.useState('');
+            const [processingStatus, setProcessingStatus] = React.useState('');
             
             // Check if libraries are loaded before enabling buttons
-            const libsLoaded = window.Papa && window.JSZip && window.saveAs && window.jspdf;
+            const libsLoaded = window.Papa && window.JSZip && window.saveAs && window.jspdf && window.Chart;
 
             // Helper function to fetch an image and convert it to a base64 data URL
             const getImageBase64 = async (url) => {
@@ -128,6 +130,7 @@
                 setError('');
                 setPitcherFiles(null);
                 setBatterFiles(null);
+                setProcessingStatus('Parsing CSV file...');
 
                 window.Papa.parse(file, {
                     header: true,
@@ -140,6 +143,7 @@
                         }
 
                         try {
+                            setProcessingStatus('Processing pitcher data...');
                             // --- PITCHER DATA PROCESSING ---
                             const pitchers = {};
                             results.data.forEach(row => {
@@ -169,6 +173,7 @@
                             });
                             setPitcherFiles(pitchers);
 
+                            setProcessingStatus('Processing batter data...');
                             // --- BATTER DATA PROCESSING ---
                             const batters = {};
                             results.data.forEach(row => {
@@ -194,11 +199,13 @@
                             setError(`An error occurred during processing: ${e.message}. Please check if the CSV columns match the requirements.`);
                         } finally {
                             setIsLoading(false);
+                            setProcessingStatus('');
                         }
                     },
                     error: (err) => {
                         setError(`CSV Parsing Error: ${err.message}`);
                         setIsLoading(false);
+                        setProcessingStatus('');
                     }
                 });
             };
@@ -207,6 +214,7 @@
             const handleDownload = async (filesToZip, zipFileName) => {
                 if (!filesToZip) return;
                 setIsLoading(true);
+                setProcessingStatus('Preparing downloads...');
 
                 const logoUrl = 'https://app.curvetestcenters.com/_next/image?url=%2Flogos%2FPNG%2Fcurve-2.0-logo_full-hrz-logo-only.png&w=1920&q=75';
                 const logoBase64 = await getImageBase64(logoUrl);
@@ -215,55 +223,89 @@
                     const zip = new window.JSZip();
                     const { jsPDF } = window.jspdf;
 
-                    for (const key in filesToZip) {
-                        // Set PDF to landscape orientation
-                        const doc = new jsPDF({ orientation: 'landscape' });
+                    const playerNames = Object.keys(filesToZip);
+                    for (let i = 0; i < playerNames.length; i++) {
+                        const key = playerNames[i];
                         const tableData = filesToZip[key];
+                        const nameParts = key.split(',').map(s => s.trim());
+                        const lastName = nameParts[0].replace(/\s*\d*$/, '').trim();
+                        const firstName = nameParts[1] || '';
+                        const cleanPlayerName = `${firstName} ${lastName}`;
+                        
+                        setProcessingStatus(`Generating report for ${cleanPlayerName} (${i+1}/${playerNames.length})...`);
+
+                        const doc = new jsPDF({ orientation: 'landscape' });
+                        doc.setFont('helvetica', 'sans-serif');
                         
                         if (logoBase64) {
                             doc.addImage(logoBase64, 'PNG', 15, 10, 60, 15);
                         }
 
-                        const nameParts = key.split(',').map(s => s.trim());
-                        const lastName = nameParts[0].replace(/\s*\d*$/, '').trim();
-                        const firstName = nameParts[1] || '';
-                        const cleanPlayerName = `${firstName} ${lastName}`;
-
-                        doc.setFontSize(20);
+                        doc.setFontSize(22);
+                        doc.setFont('helvetica', 'bold');
                         doc.text(cleanPlayerName, 15, 40);
 
                         let startY = 50;
+                        const head = [Object.keys(tableData[0])];
+                        const body = tableData.map(row => Object.values(row));
 
                         if (zipFileName === 'pitchers.zip') {
                             const introText = "This dataset contains your live game pitching data captured by TrackMan. It provides detailed information on every pitch you threw during live game action, including velocity, movement, spin, and location metrics. The purpose of sharing this data is to give you clear insights into your performance on the mound, highlight strengths, and help identify areas for continued development. We also recommend sharing this data with your pitching coach so you can work together to use it as a tool for further development.";
-                            doc.setFontSize(10);
-                            // Adjust text width for landscape layout
+                            doc.setFontSize(11);
+                            doc.setFont('helvetica', 'normal');
                             const textLines = doc.splitTextToSize(introText, 267); 
                             doc.text(textLines, 15, startY);
-                            startY += (textLines.length * 4) + 5;
+                            startY += (textLines.length * 5) + 10;
+
+                            // --- Create and add chart ---
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 800; // Higher resolution
+                            canvas.height = 350;
+                            const fastballData = tableData
+                                .filter(pitch => pitch['Pitch Type'] && pitch['Pitch Type'].toLowerCase().includes('fastball'))
+                                .map(pitch => ({
+                                    x: parseFloat(pitch['Pitch Velocity']),
+                                    y: parseFloat(pitch['Spin Rate'])
+                                }))
+                                .filter(point => !isNaN(point.x) && !isNaN(point.y));
+
+                            if (fastballData.length > 0) {
+                                new Chart(canvas.getContext('2d'), {
+                                    type: 'scatter',
+                                    data: { datasets: [{ data: fastballData, backgroundColor: '#A78BFA', pointRadius: 5 }] },
+                                    options: {
+                                        animation: false,
+                                        responsive: false,
+                                        devicePixelRatio: 3,
+                                        plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Velocity vs. Spin Rate Distribution' } },
+                                        scales: { x: { title: { display: true, text: 'Velocity (mph)' } }, y: { title: { display: true, text: 'Spin Rate (rpm)' } } }
+                                    }
+                                });
+                                doc.addImage(canvas.toDataURL('image/png'), 'PNG', 15, startY, 267, 110);
+                            }
+                            
+                            doc.addPage();
+                            doc.autoTable({ head, body, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
+                        } else {
+                             doc.autoTable({ head, body, startY, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
                         }
-                        
-                        const head = [Object.keys(tableData[0])];
-                        const body = tableData.map(row => Object.values(row));
-                        doc.autoTable({ 
-                            head: head, 
-                            body: body, 
-                            startY: startY,
-                            styles: { fontSize: 8 },
-                            headStyles: { fontSize: 8 }
-                        });
 
                         const pdfBlob = doc.output('blob');
                         const safeFileName = cleanPlayerName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
                         zip.file(`${safeFileName}.pdf`, pdfBlob);
                     }
 
-                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    const zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+                        if(metadata.percent) {
+                            setProcessingStatus(`Compressing files (${metadata.percent.toFixed(0)}%)...`);
+                        }
+                    });
                     window.saveAs(zipBlob, zipFileName);
                 } catch (err) {
                     setError(`Failed to create PDF/ZIP file: ${err.message}`);
                 } finally {
                     setIsLoading(false);
+                    setProcessingStatus('');
                 }
             };
 
@@ -313,7 +355,7 @@
                                     className="w-full flex items-center justify-center p-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105"
                                 >
                                     {isLoading ? (
-                                        <><Loader2Icon className="w-6 h-6 animate-spin mr-2" /> Processing...</>
+                                        <><Loader2Icon className="w-6 h-6 animate-spin mr-2" /> {processingStatus || 'Processing...'}</>
                                     ) : !libsLoaded ? (
                                         <><Loader2Icon className="w-6 h-6 animate-spin mr-2" /> Loading Libraries...</>
                                     ) : (
@@ -334,6 +376,7 @@
                         {(pitcherFiles || batterFiles) && (
                              <div className="space-y-6 pt-4 border-t border-slate-200">
                                 <h2 className="text-lg font-semibold text-slate-700">Step 3: Download Your Files</h2>
+                                { isLoading && <p className="text-center text-slate-500">{processingStatus}</p> }
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {/* Pitcher Download Section */}
                                     {pitcherFiles && Object.keys(pitcherFiles).length > 0 && (
