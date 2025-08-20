@@ -64,6 +64,7 @@
             const [isLoading, setIsLoading] = React.useState(false);
             const [error, setError] = React.useState('');
             const [processingStatus, setProcessingStatus] = React.useState('');
+            const [processingMode, setProcessingMode] = React.useState('both'); // 'both', 'pitchers', 'batters'
             
             // Check if libraries are loaded before enabling buttons
             const libsLoaded = window.Papa && window.JSZip && window.saveAs && window.jspdf && window.Chart;
@@ -97,6 +98,60 @@
                 }
                 
                 return value;
+            };
+            
+            // Function to generate AI-powered insights
+            const generatePlayerInsights = async (playerName, fastballData) => {
+                if (fastballData.length === 0) {
+                    return "Not enough fastball data to generate insights.";
+                }
+
+                const avgVelo = fastballData.reduce((a, b) => a + b.x, 0) / fastballData.length;
+                const maxVelo = Math.max(...fastballData.map(p => p.x));
+                const avgSpin = fastballData.reduce((a, b) => a + b.y, 0) / fastballData.length;
+                const avgHorz = fastballData.reduce((a, b) => a + b.horz, 0) / fastballData.length;
+                const avgVert = fastballData.reduce((a, b) => a + b.vert, 0) / fastballData.length;
+
+                const prompt = `
+                    Analyze the following baseball pitcher's fastball data and provide a personalized, insightful summary directly to the player, ${playerName}.
+                    Adopt the persona of a professional, encouraging baseball scout.
+                    Speak directly to the player using "you" and "your". For example: "Your fastball shows..."
+                    Keep the insight to a concise paragraph (2-4 sentences).
+                    Based on the data, provide a brief, actionable suggestion for improvement.
+
+                    Player Name: ${playerName}
+                    Data Summary:
+                    - Average Fastball Velocity: ${avgVelo.toFixed(1)} mph
+                    - Max Fastball Velocity: ${maxVelo.toFixed(1)} mph
+                    - Average Spin Rate: ${avgSpin.toFixed(0)} rpm
+                    - Average Induced Vertical Break: ${avgVert.toFixed(1)} inches
+                    - Average Horizontal Break: ${avgHorz.toFixed(1)} inches
+
+                    Example Insight Style: "Your fastball velocity is solid, averaging ${avgVelo.toFixed(1)} mph and topping out at ${maxVelo.toFixed(1)} mph. Your spin rate is currently in a developing range, suggesting potential for more movement as you refine your grip and mechanics. The pitch shows good life with ${avgVert.toFixed(1)} inches of vertical break, giving you a good foundation to build upon."
+                `;
+
+                try {
+                    let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                    const payload = { contents: chatHistory };
+                    const apiKey = "";
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0) {
+                        return result.candidates[0].content.parts[0].text;
+                    }
+                    throw new Error("No insights returned from API.");
+                } catch (err) {
+                    console.error("AI insight generation failed:", err);
+                    // Fallback to a basic summary if the API fails
+                    return `Your fastballs average ${avgVelo.toFixed(1)} mph (topping out at ${maxVelo.toFixed(1)} mph) with an average spin rate of ${avgSpin.toFixed(0)} rpm. The pitch shows an average of ${avgVert.toFixed(1)}" of induced vertical break and ${avgHorz.toFixed(1)}" of horizontal break.`;
+                }
             };
 
             // Callback for handling file selection from the input
@@ -143,57 +198,63 @@
                         }
 
                         try {
-                            setProcessingStatus('Processing pitcher data...');
-                            // --- PITCHER DATA PROCESSING ---
-                            const pitchers = {};
-                            results.data.forEach(row => {
-                                const pitcherName = row['Pitcher'];
-                                if (pitcherName) {
-                                    if (!pitchers[pitcherName]) {
-                                        pitchers[pitcherName] = [];
+                            if (processingMode === 'both' || processingMode === 'pitchers') {
+                                setProcessingStatus('Processing pitcher data...');
+                                const pitchers = {};
+                                results.data.forEach(row => {
+                                    const pitcherName = row['Pitcher'];
+                                    if (pitcherName) {
+                                        if (!pitchers[pitcherName]) {
+                                            pitchers[pitcherName] = { data: [], gameDate: null };
+                                        }
+                                        if (!pitchers[pitcherName].gameDate && row['Date']) {
+                                            pitchers[pitcherName].gameDate = row['Date'];
+                                        }
+                                        const newRow = {
+                                            'Pitch Type': formatValue(row['TaggedPitchType']),
+                                            'Pitch Velocity': formatValue(row['RelSpeed']),
+                                            'Vertical Release Angle': formatValue(row['VertRelAngle']),
+                                            'Horizontal Release Angle': formatValue(row['HorzRelAngle']),
+                                            'Spin Rate': formatValue(row['SpinRate']),
+                                            'Spin Axis': formatValue(row['SpinAxis']),
+                                            'Tilt': formatValue(row['Tilt']),
+                                            'Release Height': formatValue(row['RelHeight']),
+                                            'Release Side': formatValue(row['RelSide']),
+                                            'Extension': formatValue(row['Extension']),
+                                            'Vertical Break': formatValue(row['VertBreak']),
+                                            'Induced Vertical Break': formatValue(row['InducedVertBreak']),
+                                            'Horizontal Break': formatValue(row['HorzBreak']),
+                                        };
+                                        pitchers[pitcherName].data.push(newRow);
                                     }
-                                    
-                                    const newRow = {
-                                        'Pitch Type': formatValue(row['TaggedPitchType']),
-                                        'Pitch Velocity': formatValue(row['RelSpeed']),
-                                        'Vertical Release Angle': formatValue(row['VertRelAngle']),
-                                        'Horizontal Release Angle': formatValue(row['HorzRelAngle']),
-                                        'Spin Rate': formatValue(row['SpinRate']),
-                                        'Spin Axis': formatValue(row['SpinAxis']),
-                                        'Tilt': formatValue(row['Tilt']),
-                                        'Release Height': formatValue(row['RelHeight']),
-                                        'Release Side': formatValue(row['RelSide']),
-                                        'Extension': formatValue(row['Extension']),
-                                        'Vertical Break': formatValue(row['VertBreak']),
-                                        'Induced Vertical Break': formatValue(row['InducedVertBreak']),
-                                        'Horizontal Break': formatValue(row['HorzBreak']),
-                                    };
-                                    pitchers[pitcherName].push(newRow);
-                                }
-                            });
-                            setPitcherFiles(pitchers);
+                                });
+                                setPitcherFiles(pitchers);
+                            }
 
-                            setProcessingStatus('Processing batter data...');
-                            // --- BATTER DATA PROCESSING ---
-                            const batters = {};
-                            results.data.forEach(row => {
-                                const batterName = row['Batter'];
-                                if (batterName) {
-                                    if (!batters[batterName]) {
-                                        batters[batterName] = [];
+                            if (processingMode === 'both' || processingMode === 'batters') {
+                                setProcessingStatus('Processing batter data...');
+                                const batters = {};
+                                results.data.forEach(row => {
+                                    const batterName = row['Batter'];
+                                    if (batterName) {
+                                        if (!batters[batterName]) {
+                                            batters[batterName] = { data: [], gameDate: null };
+                                        }
+                                        if (!batters[batterName].gameDate && row['Date']) {
+                                            batters[batterName].gameDate = row['Date'];
+                                        }
+                                        const newRow = {
+                                            'Exit Velocity': formatValue(row['ExitSpeed']),
+                                            'Launch Angle': formatValue(row['Angle']),
+                                            'Distance': formatValue(row['Distance']),
+                                            'Hit Type': formatValue(row['TaggedHitType']),
+                                            'Result': formatValue(row['PlayResult']),
+                                        };
+                                        batters[batterName].data.push(newRow);
                                     }
-                                    
-                                    const newRow = {
-                                        'Exit Velocity': formatValue(row['ExitSpeed']),
-                                        'Launch Angle': formatValue(row['Angle']),
-                                        'Distance': formatValue(row['Distance']),
-                                        'Hit Type': formatValue(row['TaggedHitType']),
-                                        'Result': formatValue(row['PlayResult']),
-                                    };
-                                    batters[batterName].push(newRow);
-                                }
-                            });
-                            setBatterFiles(batters);
+                                });
+                                setBatterFiles(batters);
+                            }
 
                         } catch (e) {
                             setError(`An error occurred during processing: ${e.message}. Please check if the CSV columns match the requirements.`);
@@ -226,7 +287,10 @@
                     const playerNames = Object.keys(filesToZip);
                     for (let i = 0; i < playerNames.length; i++) {
                         const key = playerNames[i];
-                        const tableData = filesToZip[key];
+                        const playerData = filesToZip[key];
+                        const tableData = playerData.data;
+                        const gameDate = playerData.gameDate;
+
                         const nameParts = key.split(',').map(s => s.trim());
                         const lastName = nameParts[0].replace(/\s*\d*$/, '').trim();
                         const firstName = nameParts[1] || '';
@@ -241,47 +305,118 @@
                             doc.addImage(logoBase64, 'PNG', 15, 10, 60, 15);
                         }
 
-                        doc.setFontSize(22);
-                        doc.setFont('helvetica', 'bold');
-                        doc.text(cleanPlayerName, 15, 40);
-
-                        let startY = 50;
+                        let startY = 38;
                         const head = [Object.keys(tableData[0])];
                         const body = tableData.map(row => Object.values(row));
 
                         if (zipFileName === 'pitchers.zip') {
                             const introText = "This dataset contains your live game pitching data captured by TrackMan. It provides detailed information on every pitch you threw during live game action, including velocity, movement, spin, and location metrics. The purpose of sharing this data is to give you clear insights into your performance on the mound, highlight strengths, and help identify areas for continued development. We also recommend sharing this data with your pitching coach so you can work together to use it as a tool for further development.";
+                            
+                            const textLines = doc.splitTextToSize(introText, 267);
+                            const textHeight = (textLines.length * 5) + 35; // Increased buffer
+
+                            // Draw background box
+                            doc.setFillColor(238, 242, 255); // A light purple/indigo color
+                            doc.rect(10, 25, 277, textHeight, 'F'); // Adjusted position and height
+
+                            // Draw text on top
+                            doc.setTextColor(0, 0, 0);
+                            doc.setFontSize(22);
+                            doc.setFont('helvetica', 'bold');
+                            doc.text(cleanPlayerName, 15, startY);
+                            
+                            if (gameDate) {
+                                doc.setFontSize(12);
+                                doc.setFont('helvetica', 'normal');
+                                doc.text(`Game Date: ${gameDate}`, 15, startY + 8);
+                            }
+                            
                             doc.setFontSize(11);
                             doc.setFont('helvetica', 'normal');
-                            const textLines = doc.splitTextToSize(introText, 267); 
-                            doc.text(textLines, 15, startY);
-                            startY += (textLines.length * 5) + 10;
+                            doc.text(textLines, 15, startY + 18);
 
-                            // --- Create and add chart ---
-                            const canvas = document.createElement('canvas');
-                            canvas.width = 800; // Higher resolution
-                            canvas.height = 350;
+                            startY = 25 + textHeight + 10;
+
+                            // --- Create and add charts ---
+                            const canvasVelo = document.createElement('canvas');
+                            canvasVelo.width = 400;
+                            canvasVelo.height = 350;
                             const fastballData = tableData
                                 .filter(pitch => pitch['Pitch Type'] && pitch['Pitch Type'].toLowerCase().includes('fastball'))
                                 .map(pitch => ({
                                     x: parseFloat(pitch['Pitch Velocity']),
-                                    y: parseFloat(pitch['Spin Rate'])
+                                    y: parseFloat(pitch['Spin Rate']),
+                                    horz: parseFloat(pitch['Horizontal Break']),
+                                    vert: parseFloat(pitch['Induced Vertical Break'])
                                 }))
-                                .filter(point => !isNaN(point.x) && !isNaN(point.y));
+                                .filter(point => !isNaN(point.x) && !isNaN(point.y) && !isNaN(point.horz) && !isNaN(point.vert));
 
                             if (fastballData.length > 0) {
-                                new Chart(canvas.getContext('2d'), {
+                                setProcessingStatus(`Generating insights for ${cleanPlayerName}...`);
+                                const insights = await generatePlayerInsights(cleanPlayerName, fastballData);
+                                
+                                doc.setFontSize(12);
+                                doc.setFont('helvetica', 'bold');
+                                doc.text('Player Insights', 15, startY);
+                                doc.setFontSize(10);
+                                doc.setFont('helvetica', 'normal');
+                                doc.text(doc.splitTextToSize(insights, 80), 15, startY + 8);
+
+                                // --- Velo vs Spin Chart ---
+                                new Chart(canvasVelo.getContext('2d'), {
                                     type: 'scatter',
-                                    data: { datasets: [{ data: fastballData, backgroundColor: '#A78BFA', pointRadius: 5 }] },
+                                    data: { datasets: [{ data: fastballData.map(p => ({x: p.x, y: p.y})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
                                     options: {
-                                        animation: false,
-                                        responsive: false,
-                                        devicePixelRatio: 3,
-                                        plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Velocity vs. Spin Rate Distribution' } },
+                                        animation: false, responsive: false, devicePixelRatio: 3,
+                                        plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Velocity vs. Spin Rate' } },
                                         scales: { x: { title: { display: true, text: 'Velocity (mph)' } }, y: { title: { display: true, text: 'Spin Rate (rpm)' } } }
                                     }
                                 });
-                                doc.addImage(canvas.toDataURL('image/png'), 'PNG', 15, startY, 267, 110);
+                                
+                                // --- Movement Profile Chart ---
+                                const canvasMove = document.createElement('canvas');
+                                canvasMove.width = 400;
+                                canvasMove.height = 350;
+                                new Chart(canvasMove.getContext('2d'), {
+                                    type: 'scatter',
+                                    data: { datasets: [{ data: fastballData.map(p => ({x: p.horz, y: p.vert})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
+                                    plugins: [{ // Custom plugin to draw heavy zero-axes
+                                        id: 'heavyZeroAxes',
+                                        afterDraw: (chart) => {
+                                            const ctx = chart.ctx;
+                                            const xAxis = chart.scales.x;
+                                            const yAxis = chart.scales.y;
+                                            ctx.save();
+                                            ctx.strokeStyle = '#6B7280'; // A darker gray
+                                            ctx.lineWidth = 2;
+                                            // Horizontal Line
+                                            ctx.beginPath();
+                                            ctx.moveTo(xAxis.left, yAxis.getPixelForValue(0));
+                                            ctx.lineTo(xAxis.right, yAxis.getPixelForValue(0));
+                                            ctx.stroke();
+                                            // Vertical Line
+                                            ctx.beginPath();
+                                            ctx.moveTo(xAxis.getPixelForValue(0), yAxis.top);
+                                            ctx.lineTo(xAxis.getPixelForValue(0), yAxis.bottom);
+                                            ctx.stroke();
+                                            ctx.restore();
+                                        }
+                                    }],
+                                    options: {
+                                        animation: false, responsive: false, devicePixelRatio: 3,
+                                        plugins: { 
+                                            legend: { display: false }, 
+                                            title: { display: true, text: 'Fastball Movement Profile' }
+                                        },
+                                        scales: { 
+                                            x: { title: { display: true, text: 'Horizontal Break (in)' }, min: -25, max: 25 }, 
+                                            y: { title: { display: true, text: 'Induced Vertical Break (in)' }, min: -25, max: 25 } 
+                                        }
+                                    }
+                                });
+
+                                doc.addImage(canvasVelo.toDataURL('image/png'), 'PNG', 100, startY, 90, 80);
+                                doc.addImage(canvasMove.toDataURL('image/png'), 'PNG', 195, startY, 90, 80);
                             }
                             
                             doc.addPage();
@@ -349,6 +484,16 @@
                         {file && !pitcherFiles && !batterFiles && (
                             <div className="space-y-4">
                                 <h2 className="text-lg font-semibold text-slate-700">Step 2: Process File</h2>
+                                
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-slate-600">Processing Mode</label>
+                                    <div className="flex items-center space-x-4 rounded-lg bg-slate-100 p-1">
+                                        <button onClick={() => setProcessingMode('both')} className={`w-full rounded-md p-2 text-sm font-semibold transition-colors ${processingMode === 'both' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}>Both</button>
+                                        <button onClick={() => setProcessingMode('pitchers')} className={`w-full rounded-md p-2 text-sm font-semibold transition-colors ${processingMode === 'pitchers' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}>Pitchers Only</button>
+                                        <button onClick={() => setProcessingMode('batters')} className={`w-full rounded-md p-2 text-sm font-semibold transition-colors ${processingMode === 'batters' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}>Batters Only</button>
+                                    </div>
+                                </div>
+
                                 <button
                                     onClick={handleProcess}
                                     disabled={isLoading || !libsLoaded}
