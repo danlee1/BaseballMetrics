@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CSV Player Report Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -125,7 +126,7 @@
 
             // --- Global Constants ---
             const PITCH_TYPES = ['Fastball', 'Sinker', 'Slider', 'CurveBall', 'ChangeUp', 'Splitter'];
-            const PITCHING_METRICS = ['Peak_Velocity', 'Average_Velocity', 'Average_IVB', 'Average_HB', 'Strike_%', 'Count'];
+            const PITCHING_METRICS = ['Peak_Velocity', 'Average_Velocity', 'Average_IVB', 'Average_HB', 'Average_SpinRate', 'Strike_%', 'Count'];
             
             const basePart1Headers = [
                 'Last_Name', 'First_Name', 'Graduation_Year', 'Appointment_ID', 'Date', 'Practice_Type', 
@@ -136,6 +137,7 @@
                     basePart1Headers.push(`${pitchType}_${metric}`);
                 });
             });
+            basePart1Headers.push('Total_Pitches');
 
             // --- Event Listeners ---
             csvFilesInput.addEventListener('change', () => {
@@ -169,45 +171,73 @@
                     let combinedData = [];
                     allFilesData.forEach(file => combinedData = combinedData.concat(file.data));
                     
-                    const { grouped, failed } = groupDataByPlayerAndPractice(combinedData);
+                    const { grouped, failed } = groupDataByPlayer(combinedData);
                     
                     const reportData = [];
-                    for (const groupKey in grouped) {
-                        const playerRows = grouped[groupKey];
-                        const rawPlayerName = playerRows[0].Batter || playerRows[0].Pitcher;
-                        const practiceType = playerRows[0]?.PracticeType || 'unknown';
-                        const date = playerRows[0]?.Date || '';
+                    for (const rawPlayerName in grouped) {
+                        const allPlayerRows = grouped[rawPlayerName];
 
-                        const { lastName, firstName, graduationYear, appointmentId } = parsePlayerName(rawPlayerName);
+                        const hittingRows = allPlayerRows.filter(r => r.PracticeType?.toLowerCase() === 'hitting');
+                        // Any non-hitting practice type is considered pitching for this logic
+                        const pitchingRows = allPlayerRows.filter(r => r.PracticeType && r.PracticeType.toLowerCase() !== 'hitting');
+                        
+                        // Add rows with missing practice type to the failed list
+                        allPlayerRows.filter(r => !r.PracticeType).forEach(row => {
+                            row.Error_Reason = 'Missing Practice_Type.';
+                            failed.push(row);
+                        });
 
-                        const baseRow = {};
-                        basePart1Headers.forEach(h => baseRow[h] = ''); // Internal keys always use underscores
-                        baseRow.Last_Name = lastName;
-                        baseRow.First_Name = firstName;
-                        baseRow.Graduation_Year = graduationYear;
-                        baseRow.Appointment_ID = appointmentId;
-                        baseRow.Date = date;
-                        baseRow.Practice_Type = practiceType;
+                        if (hittingRows.length > 0 || pitchingRows.length > 0) {
+                            const { lastName, firstName, graduationYear, appointmentId } = parsePlayerName(rawPlayerName);
+                            const date = allPlayerRows[0]?.Date || '';
 
-                        if (practiceType.toLowerCase() === 'hitting') {
-                            const metrics = calculateHittingMetrics(playerRows);
-                            reportData.push({ ...baseRow, ...metrics });
-                        } else {
-                            const metrics = calculatePitchingMetrics(playerRows);
-                            reportData.push({ ...baseRow, ...metrics });
+                            const baseRow = {};
+                            basePart1Headers.forEach(h => baseRow[h] = '');
+                            baseRow.Last_Name = lastName;
+                            baseRow.First_Name = firstName;
+                            baseRow.Graduation_Year = graduationYear;
+                            baseRow.Appointment_ID = appointmentId;
+                            baseRow.Date = date;
+
+                            let finalMetrics = {};
+                            let practiceType = '';
+
+                            if (hittingRows.length > 0 && pitchingRows.length > 0) {
+                                practiceType = '2-Way';
+                                const hittingMetrics = calculateHittingMetrics(hittingRows);
+                                const pitchingMetrics = calculatePitchingMetrics(pitchingRows);
+                                finalMetrics = { ...hittingMetrics, ...pitchingMetrics };
+                            } else if (hittingRows.length > 0) {
+                                practiceType = 'Hitting';
+                                finalMetrics = calculateHittingMetrics(hittingRows);
+                            } else if (pitchingRows.length > 0) {
+                                practiceType = 'Pitching';
+                                finalMetrics = calculatePitchingMetrics(pitchingRows);
+                            }
+
+                            baseRow.Practice_Type = practiceType;
+                            reportData.push({ ...baseRow, ...finalMetrics });
                         }
                     }
                     
                     const useUnderscores = part1UnderscoresCheckbox.checked;
                     const displayHeaders = useUnderscores ? basePart1Headers : basePart1Headers.map(h => h.replace(/_/g, ' '));
                     
-                    downloadCSV(reportData, displayHeaders, 'part_1_metrics_report.csv');
+                    const reportCsvString = createCSVString(reportData, displayHeaders);
+
                     let successMessage = 'Part 1 report downloaded successfully. You can now manually edit it before proceeding to Part 2.';
 
                     if (failed.length > 0) {
-                        const errorHeaders = Object.keys(failed[0]);
-                        downloadCSV(failed, errorHeaders, 'part_1_errors.csv');
-                        successMessage += ` An additional file with ${failed.length} unprocessed rows has also been downloaded.`;
+                        const errorHeaders = [...new Set(failed.flatMap(Object.keys))];
+                        const errorCsvString = createCSVString(failed, errorHeaders);
+                        const filesToZip = [
+                            { name: 'part_1_metrics_report.csv', content: reportCsvString },
+                            { name: 'part_1_errors.csv', content: errorCsvString }
+                        ];
+                        await downloadZip(filesToZip, 'part_1_reports.zip');
+                        successMessage = `A .zip file with the report and ${failed.length} unprocessed rows has been downloaded.`;
+                    } else {
+                        triggerDownload(new Blob([reportCsvString], { type: 'text/csv;charset=utf-8;' }), 'part_1_metrics_report.csv');
                     }
                     log(successMessage, 'success');
 
@@ -247,9 +277,12 @@
                     const finalDynamicHeaders = useUnderscores ? dynamicJoinHeaders.map(h => h.replace(/ /g, '_').replace(/#/g, '')) : dynamicJoinHeaders;
 
                     const joinMap = new Map();
+                    const joinLastNameHeader = joinFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'last name');
+                    const joinFirstNameHeader = joinFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'first name');
+
                     joinFileData.data.forEach(row => {
-                        const lastName = row['Last Name']?.trim().toLowerCase();
-                        const firstName = row['First Name']?.trim().toLowerCase();
+                        const lastName = row[joinLastNameHeader]?.trim().toLowerCase();
+                        const firstName = row[joinFirstNameHeader]?.trim().toLowerCase();
                         if (lastName && firstName) {
                             joinMap.set(`${lastName}|${firstName}`, row);
                         } else {
@@ -258,11 +291,12 @@
                         }
                     });
 
+                    const metricsLastNameHeader = metricsFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'last name');
+                    const metricsFirstNameHeader = metricsFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'first name');
+
                     const finalReport = metricsFileData.data.map(metricsRow => {
-                        const lastNameKey = Object.keys(metricsRow).find(k => k.toLowerCase().replace(/_/g, ' ') === 'last name') || 'Last_Name';
-                        const firstNameKey = Object.keys(metricsRow).find(k => k.toLowerCase().replace(/_/g, ' ') === 'first name') || 'First_Name';
-                        const lastName = metricsRow[lastNameKey]?.trim().toLowerCase();
-                        const firstName = metricsRow[firstNameKey]?.trim().toLowerCase();
+                        const lastName = metricsRow[metricsLastNameHeader]?.trim().toLowerCase();
+                        const firstName = metricsRow[metricsFirstNameHeader]?.trim().toLowerCase();
                         
                         if (!lastName || !firstName) {
                             metricsRow.Error_Reason = 'Missing Last_Name or First_Name in Ball Data file.';
@@ -284,13 +318,20 @@
                     }).filter(Boolean);
                     
                     const finalHeaders = [...metricsFileData.headers, ...finalDynamicHeaders];
-                    downloadCSV(finalReport, finalHeaders, 'final_joined_report.csv');
+                    const finalReportCsvString = createCSVString(finalReport, finalHeaders);
                     
                     let successMessage = 'Final report downloaded successfully!';
                     if (failedRows.length > 0) {
                         const errorHeaders = [...new Set(failedRows.flatMap(Object.keys))];
-                        downloadCSV(failedRows, errorHeaders, 'part_2_join_errors.csv');
-                        successMessage += ` An additional file with ${failedRows.length} rows that failed to join has also been downloaded.`;
+                        const errorCsvString = createCSVString(failedRows, errorHeaders);
+                        const filesToZip = [
+                            { name: 'final_joined_report.csv', content: finalReportCsvString },
+                            { name: 'part_2_join_errors.csv', content: errorCsvString }
+                        ];
+                        await downloadZip(filesToZip, 'part_2_reports.zip');
+                        successMessage = `A .zip file with the final report and ${failedRows.length} rows that failed to join has been downloaded.`;
+                    } else {
+                        triggerDownload(new Blob([finalReportCsvString], { type: 'text/csv;charset=utf-8;' }), 'final_joined_report.csv');
                     }
                     log(successMessage, 'success');
 
@@ -414,18 +455,16 @@
                 }, {});
             }
 
-            function groupDataByPlayerAndPractice(data) {
+            function groupDataByPlayer(data) {
                 const grouped = {};
                 const failed = [];
                 data.forEach(row => {
                     const playerName = row.Batter || row.Pitcher;
-                    const practiceType = row.PracticeType;
-                    if (playerName && practiceType) {
-                        const groupKey = `${playerName}|${practiceType}`;
-                        if (!grouped[groupKey]) grouped[groupKey] = [];
-                        grouped[groupKey].push(row);
+                    if (playerName) {
+                        if (!grouped[playerName]) grouped[playerName] = [];
+                        grouped[playerName].push(row);
                     } else {
-                        row.Error_Reason = 'Missing Batter/Pitcher name or Practice_Type.';
+                        row.Error_Reason = 'Missing Batter/Pitcher name.';
                         failed.push(row);
                     }
                 });
@@ -462,28 +501,47 @@
             function calculatePitchingMetrics(rows) {
                 const groupedByPitchType = groupData(rows, 'TaggedPitchType');
                 const allMetrics = {};
+                let totalPitches = 0;
+
                 PITCH_TYPES.forEach(pitchType => {
                     const pitchTypeRows = groupedByPitchType[pitchType] || [];
-                    if (pitchTypeRows.length === 0) {
-                        PITCHING_METRICS.forEach(metric => allMetrics[`${pitchType}_${metric}`] = '');
+                    
+                    const count = pitchTypeRows.length;
+                    allMetrics[`${pitchType}_Count`] = count;
+                    totalPitches += count;
+
+                    if (count === 0) {
+                        PITCHING_METRICS.forEach(metric => {
+                            if (metric !== 'Count') allMetrics[`${pitchType}_${metric}`] = '';
+                        });
                         return;
                     }
+
                     const relSpeeds = pitchTypeRows.map(r => parseFloat(r.RelSpeed)).filter(v => !isNaN(v));
                     const ivbs = pitchTypeRows.map(r => parseFloat(r.InducedVertBreak)).filter(v => !isNaN(v));
                     const hbs = pitchTypeRows.map(r => parseFloat(r.HorzBreak)).filter(v => !isNaN(v));
+                    const spinRates = pitchTypeRows.map(r => parseFloat(r.SpinRate)).filter(v => !isNaN(v));
                     const validStrikeZoneRows = pitchTypeRows.filter(r => !isNaN(parseFloat(r.PlateLocSide)) && !isNaN(parseFloat(r.PlateLocHeight)));
-                    allMetrics[`${pitchType}_Count`] = pitchTypeRows.length;
+                    
                     const peakVelo = relSpeeds.length > 0 ? Math.max(...relSpeeds) : 0;
                     allMetrics[`${pitchType}_Peak_Velocity`] = peakVelo.toFixed(1);
+                    
                     let avgVelo = 0;
                     if(relSpeeds.length > 0) avgVelo = relSpeeds.reduce((a, b) => a + b, 0) / relSpeeds.length;
                     allMetrics[`${pitchType}_Average_Velocity`] = avgVelo.toFixed(1);
+                    
                     let avgIVB = 0;
                     if(ivbs.length > 0) avgIVB = ivbs.reduce((a, b) => a + b, 0) / ivbs.length;
                     allMetrics[`${pitchType}_Average_IVB`] = avgIVB.toFixed(1);
+                    
                     let avgHB = 0;
                     if(hbs.length > 0) avgHB = hbs.reduce((a, b) => a + b, 0) / hbs.length;
                     allMetrics[`${pitchType}_Average_HB`] = avgHB.toFixed(1);
+
+                    let avgSpin = 0;
+                    if(spinRates.length > 0) avgSpin = spinRates.reduce((a, b) => a + b, 0) / spinRates.length;
+                    allMetrics[`${pitchType}_Average_SpinRate`] = avgSpin.toFixed(1);
+                    
                     const strikes = validStrikeZoneRows.filter(r => {
                         const side = parseFloat(r.PlateLocSide);
                         const height = parseFloat(r.PlateLocHeight);
@@ -492,15 +550,12 @@
                     const strikePercent = validStrikeZoneRows.length > 0 ? (strikes / validStrikeZoneRows.length) * 100 : 0;
                     allMetrics[`${pitchType}_Strike_%`] = `${strikePercent.toFixed(1)}%`;
                 });
+
+                allMetrics['Total_Pitches'] = totalPitches;
                 return allMetrics;
             }
 
-            function downloadCSV(data, headers, filename) {
-                if (!data || data.length === 0) {
-                    if (filename.includes('error')) return;
-                    log('No data available to download.', 'error');
-                    return;
-                }
+            function createCSVString(data, headers) {
                 const csvRows = [headers.join(',')];
                 data.forEach(row => {
                     const values = headers.map(header => {
@@ -511,8 +566,10 @@
                     });
                     csvRows.push(values.join(','));
                 });
-                const csvString = csvRows.join('\n');
-                const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+                return csvRows.join('\n');
+            }
+
+            function triggerDownload(blob, filename) {
                 const link = document.createElement('a');
                 const url = URL.createObjectURL(blob);
                 link.setAttribute('href', url);
@@ -522,6 +579,15 @@
                 link.click();
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
+            }
+            
+            async function downloadZip(files, zipFilename) {
+                const zip = new JSZip();
+                files.forEach(file => {
+                    zip.file(file.name, file.content);
+                });
+                const blob = await zip.generateAsync({ type: 'blob' });
+                triggerDownload(blob, zipFilename);
             }
 
             function log(message, type = 'info') {
