@@ -65,19 +65,29 @@
             const [error, setError] = React.useState('');
             const [processingStatus, setProcessingStatus] = React.useState('');
             const [processingMode, setProcessingMode] = React.useState('both'); // 'both', 'pitchers', 'batters'
+            const [reportOptions, setReportOptions] = React.useState({
+                showInsights: true,
+                showVeloSpinChart: true,
+                showMovementChart: true,
+            });
+            
+            const logoUrl = 'https://app.curvetestcenters.com/_next/image?url=%2Flogos%2FPNG%2Fcurve-2.0-logo_full-hrz-logo-only.png&w=1920&q=75';
             
             // Check if libraries are loaded before enabling buttons
             const libsLoaded = window.Papa && window.JSZip && window.saveAs && window.jspdf && window.Chart;
 
-            // Helper function to fetch an image and convert it to a base64 data URL
+            // Function to fetch an image and convert it to a base64 data URL for the PDF
             const getImageBase64 = async (url) => {
                 try {
                     const response = await fetch(url);
+                    if (!response.ok) {
+                        throw new Error(`Network response was not ok, status: ${response.status}`);
+                    }
                     const blob = await response.blob();
                     return new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onloadend = () => resolve(reader.result);
-                        reader.onerror = reject;
+                        reader.onerror = (error) => reject(error);
                         reader.readAsDataURL(blob);
                     });
                 } catch (e) {
@@ -85,6 +95,7 @@
                     return null;
                 }
             };
+
 
             // Helper function to clean and round data
             const formatValue = (value) => {
@@ -113,11 +124,12 @@
                 const avgVert = fastballData.reduce((a, b) => a + b.vert, 0) / fastballData.length;
 
                 const prompt = `
-                    Analyze the following baseball pitcher's fastball data and provide a personalized, insightful summary directly to the player, ${playerName}.
-                    Adopt the persona of a professional, encouraging baseball scout.
-                    Speak directly to the player using "you" and "your". For example: "Your fastball shows..."
-                    Keep the insight to a concise paragraph (2-4 sentences).
-                    Based on the data, provide a brief, actionable suggestion for improvement.
+                    Analyze the following baseball pitcher's fastball data and provide a personalized, factual summary directly to the player, ${playerName}.
+                    Adopt the persona of a professional baseball data analyst.
+                    Speak directly to the player using "you" and "your" (e.g., "Your fastball averaged...").
+                    Avoid subjective or judgmental words like "good," "bad," "solid," or "excellent."
+                    Focus on objective analysis. Describe what the metrics indicate about the pitch's characteristics.
+                    Keep the insight to a concise paragraph (4 - 6 sentences).
 
                     Player Name: ${playerName}
                     Data Summary:
@@ -127,7 +139,7 @@
                     - Average Induced Vertical Break: ${avgVert.toFixed(1)} inches
                     - Average Horizontal Break: ${avgHorz.toFixed(1)} inches
 
-                    Example Insight Style: "Your fastball velocity is solid, averaging ${avgVelo.toFixed(1)} mph and topping out at ${maxVelo.toFixed(1)} mph. Your spin rate is currently in a developing range, suggesting potential for more movement as you refine your grip and mechanics. The pitch shows good life with ${avgVert.toFixed(1)} inches of vertical break, giving you a good foundation to build upon."
+                    Example of Factual Insight Style: "Your fastball averaged ${avgVelo.toFixed(1)} mph and reached a maximum of ${maxVelo.toFixed(1)} mph in this session. The average spin rate of ${avgSpin.toFixed(0)} rpm, combined with ${avgVert.toFixed(1)} inches of vertical break, indicates the pitch has [carry/sinking] characteristics. The ${avgHorz.toFixed(1)} inches of horizontal break gives the pitch [arm-side run / glove-side cut]."
                 `;
 
                 try {
@@ -276,8 +288,7 @@
                 if (!filesToZip) return;
                 setIsLoading(true);
                 setProcessingStatus('Preparing downloads...');
-
-                const logoUrl = 'https://app.curvetestcenters.com/_next/image?url=%2Flogos%2FPNG%2Fcurve-2.0-logo_full-hrz-logo-only.png&w=1920&q=75';
+                
                 const logoBase64 = await getImageBase64(logoUrl);
 
                 try {
@@ -302,7 +313,7 @@
                         doc.setFont('helvetica', 'sans-serif');
                         
                         if (logoBase64) {
-                            doc.addImage(logoBase64, 'PNG', 15, 10, 60, 15);
+                            doc.addImage(logoBase64, 'PNG', 15, 10, 50, 12.5);
                         }
 
                         let startY = 38;
@@ -310,10 +321,11 @@
                         const body = tableData.map(row => Object.values(row));
 
                         if (zipFileName === 'pitchers.zip') {
-                            const introText = "This dataset contains your live game pitching data captured by TrackMan. It provides detailed information on every pitch you threw during live game action, including velocity, movement, spin, and location metrics. The purpose of sharing this data is to give you clear insights into your performance on the mound, highlight strengths, and help identify areas for continued development. We also recommend sharing this data with your pitching coach so you can work together to use it as a tool for further development.";
+                            const introText = "This dataset contains your live game pitching data recorded by TrackMan. It includes detailed information on each pitch tracked during game action, such as velocity, movement, spin, and location metrics. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your pitching coach to maximize its value as a tool for growth.";
+                            const disclaimerText = "Please note: not every pitch thrown in the game may appear in the dataset due to occasional interference or tracking limitations.";
                             
                             const textLines = doc.splitTextToSize(introText, 267);
-                            const textHeight = (textLines.length * 5) + 35; // Increased buffer
+                            const textHeight = (textLines.length * 5) + 40; // Increased buffer
 
                             // Draw background box
                             doc.setFillColor(238, 242, 255); // A light purple/indigo color
@@ -338,9 +350,6 @@
                             startY = 25 + textHeight + 10;
 
                             // --- Create and add charts ---
-                            const canvasVelo = document.createElement('canvas');
-                            canvasVelo.width = 400;
-                            canvasVelo.height = 350;
                             const fastballData = tableData
                                 .filter(pitch => pitch['Pitch Type'] && pitch['Pitch Type'].toLowerCase().includes('fastball'))
                                 .map(pitch => ({
@@ -352,72 +361,71 @@
                                 .filter(point => !isNaN(point.x) && !isNaN(point.y) && !isNaN(point.horz) && !isNaN(point.vert));
 
                             if (fastballData.length > 0) {
-                                setProcessingStatus(`Generating insights for ${cleanPlayerName}...`);
-                                const insights = await generatePlayerInsights(cleanPlayerName, fastballData);
-                                
-                                doc.setFontSize(12);
-                                doc.setFont('helvetica', 'bold');
-                                doc.text('Player Insights', 15, startY);
-                                doc.setFontSize(10);
-                                doc.setFont('helvetica', 'normal');
-                                doc.text(doc.splitTextToSize(insights, 80), 15, startY + 8);
+                                let currentX = 15;
+                                const chartHeight = 80;
 
-                                // --- Velo vs Spin Chart ---
-                                new Chart(canvasVelo.getContext('2d'), {
-                                    type: 'scatter',
-                                    data: { datasets: [{ data: fastballData.map(p => ({x: p.x, y: p.y})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
-                                    options: {
-                                        animation: false, responsive: false, devicePixelRatio: 3,
-                                        plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Velocity vs. Spin Rate' } },
-                                        scales: { x: { title: { display: true, text: 'Velocity (mph)' } }, y: { title: { display: true, text: 'Spin Rate (rpm)' } } }
-                                    }
-                                });
+                                if (reportOptions.showInsights) {
+                                    setProcessingStatus(`Generating insights for ${cleanPlayerName}...`);
+                                    const insights = await generatePlayerInsights(cleanPlayerName, fastballData);
+                                    doc.setFontSize(12);
+                                    doc.setFont('helvetica', 'bold');
+                                    doc.text('Player Insights', 15, startY);
+                                    doc.setFontSize(10);
+                                    doc.setFont('helvetica', 'normal');
+                                    doc.text(doc.splitTextToSize(insights, 80), 15, startY + 8);
+                                    currentX += 85;
+                                }
                                 
-                                // --- Movement Profile Chart ---
-                                const canvasMove = document.createElement('canvas');
-                                canvasMove.width = 400;
-                                canvasMove.height = 350;
-                                new Chart(canvasMove.getContext('2d'), {
-                                    type: 'scatter',
-                                    data: { datasets: [{ data: fastballData.map(p => ({x: p.horz, y: p.vert})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
-                                    plugins: [{ // Custom plugin to draw heavy zero-axes
-                                        id: 'heavyZeroAxes',
-                                        afterDraw: (chart) => {
-                                            const ctx = chart.ctx;
-                                            const xAxis = chart.scales.x;
-                                            const yAxis = chart.scales.y;
-                                            ctx.save();
-                                            ctx.strokeStyle = '#6B7280'; // A darker gray
-                                            ctx.lineWidth = 2;
-                                            // Horizontal Line
-                                            ctx.beginPath();
-                                            ctx.moveTo(xAxis.left, yAxis.getPixelForValue(0));
-                                            ctx.lineTo(xAxis.right, yAxis.getPixelForValue(0));
-                                            ctx.stroke();
-                                            // Vertical Line
-                                            ctx.beginPath();
-                                            ctx.moveTo(xAxis.getPixelForValue(0), yAxis.top);
-                                            ctx.lineTo(xAxis.getPixelForValue(0), yAxis.bottom);
-                                            ctx.stroke();
-                                            ctx.restore();
-                                        }
-                                    }],
-                                    options: {
-                                        animation: false, responsive: false, devicePixelRatio: 3,
-                                        plugins: { 
-                                            legend: { display: false }, 
-                                            title: { display: true, text: 'Fastball Movement Profile' }
-                                        },
-                                        scales: { 
-                                            x: { title: { display: true, text: 'Horizontal Break (in)' }, min: -25, max: 25 }, 
-                                            y: { title: { display: true, text: 'Induced Vertical Break (in)' }, min: -25, max: 25 } 
-                                        }
-                                    }
-                                });
+                                const chartsToRender = [
+                                    reportOptions.showVeloSpinChart && 'velo',
+                                    reportOptions.showMovementChart && 'move'
+                                ].filter(Boolean);
 
-                                doc.addImage(canvasVelo.toDataURL('image/png'), 'PNG', 100, startY, 90, 80);
-                                doc.addImage(canvasMove.toDataURL('image/png'), 'PNG', 195, startY, 90, 80);
+                                const dynamicChartWidth = chartsToRender.length > 0 ? (282 - currentX) / chartsToRender.length : 0;
+
+                                // MODIFICATION: Added a plugin to set a white background for the charts
+                                const whiteBackgroundPlugin = {
+                                    id: 'customCanvasBackgroundColor',
+                                    beforeDraw: (chart) => {
+                                        const ctx = chart.canvas.getContext('2d');
+                                        ctx.save();
+                                        ctx.globalCompositeOperation = 'destination-over';
+                                        ctx.fillStyle = 'white';
+                                        ctx.fillRect(0, 0, chart.width, chart.height);
+                                        ctx.restore();
+                                    }
+                                };
+
+                                if (reportOptions.showVeloSpinChart) {
+                                    const canvasVelo = document.createElement('canvas');
+                                    canvasVelo.width = 400; canvasVelo.height = 350;
+                                    new Chart(canvasVelo.getContext('2d'), {
+                                        type: 'scatter',
+                                        data: { datasets: [{ data: fastballData.map(p => ({x: p.x, y: p.y})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
+                                        plugins: [whiteBackgroundPlugin],
+                                        options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Velocity vs. Spin Rate' } }, scales: { x: { title: { display: true, text: 'Velocity (mph)' } }, y: { title: { display: true, text: 'Spin Rate (rpm)' } } } }
+                                    });
+                                    doc.addImage(canvasVelo.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, startY, dynamicChartWidth, chartHeight);
+                                    currentX += dynamicChartWidth + 5;
+                                }
+
+                                if (reportOptions.showMovementChart) {
+                                    const canvasMove = document.createElement('canvas');
+                                    canvasMove.width = 400; canvasMove.height = 350;
+                                    new Chart(canvasMove.getContext('2d'), {
+                                        type: 'scatter',
+                                        data: { datasets: [{ data: fastballData.map(p => ({x: p.horz, y: p.vert})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
+                                        plugins: [whiteBackgroundPlugin, { id: 'heavyZeroAxes', afterDraw: (chart) => { const ctx = chart.ctx; const xAxis = chart.scales.x; const yAxis = chart.scales.y; ctx.save(); ctx.strokeStyle = '#6B7280'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xAxis.left, yAxis.getPixelForValue(0)); ctx.lineTo(xAxis.right, yAxis.getPixelForValue(0)); ctx.stroke(); ctx.beginPath(); ctx.moveTo(xAxis.getPixelForValue(0), yAxis.top); ctx.lineTo(xAxis.getPixelForValue(0), yAxis.bottom); ctx.stroke(); ctx.restore(); } }],
+                                        options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Movement Profile' } }, scales: { x: { title: { display: true, text: 'Horizontal Break (in)' }, min: -25, max: 25 }, y: { title: { display: true, text: 'Induced Vertical Break (in)' }, min: -25, max: 25 } } }
+                                    });
+                                    doc.addImage(canvasMove.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, startY, dynamicChartWidth, chartHeight);
+                                }
                             }
+                            
+                            // Add disclaimer at the bottom of the first page
+                            doc.setFontSize(8);
+                            doc.setTextColor(100, 100, 100); // Gray color
+                            doc.text(disclaimerText, 15, doc.internal.pageSize.getHeight() - 10);
                             
                             doc.addPage();
                             doc.autoTable({ head, body, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
@@ -449,7 +457,7 @@
                     <div className="w-full max-w-3xl bg-white rounded-xl shadow-lg p-6 md:p-8 space-y-6">
                         
                         <div className="text-center">
-                            <img src="https://app.curvetestcenters.com/_next/image?url=%2Flogos%2FPNG%2Fcurve-2.0-logo_full-hrz-logo-only.png&w=1920&q=75" alt="Curve Logo" className="mx-auto h-12 w-auto mb-4" />
+                            <img src={logoUrl} alt="Curve Logo" className="mx-auto h-12 w-auto mb-4" crossOrigin="anonymous" />
                             <h1 className="text-3xl font-bold text-slate-800">Trackman Live Game Data Processor</h1>
                             <p className="text-slate-500 mt-2">Upload your game CSV to generate separate files for each pitcher and batter.</p>
                         </div>
@@ -493,6 +501,26 @@
                                         <button onClick={() => setProcessingMode('batters')} className={`w-full rounded-md p-2 text-sm font-semibold transition-colors ${processingMode === 'batters' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}>Batters Only</button>
                                     </div>
                                 </div>
+
+                                {(processingMode === 'both' || processingMode === 'pitchers') && (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-slate-600">Report Options</label>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input type="checkbox" checked={reportOptions.showInsights} onChange={(e) => setReportOptions({...reportOptions, showInsights: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                                <span className="text-sm text-slate-700">Insights</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input type="checkbox" checked={reportOptions.showVeloSpinChart} onChange={(e) => setReportOptions({...reportOptions, showVeloSpinChart: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                                <span className="text-sm text-slate-700">Velo/Spin Chart</span>
+                                            </label>
+                                            <label className="flex items-center space-x-2 cursor-pointer">
+                                                <input type="checkbox" checked={reportOptions.showMovementChart} onChange={(e) => setReportOptions({...reportOptions, showMovementChart: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                                <span className="text-sm text-slate-700">Movement Chart</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <button
                                     onClick={handleProcess}
