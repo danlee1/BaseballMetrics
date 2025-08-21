@@ -313,7 +313,7 @@
                         doc.setFont('helvetica', 'sans-serif');
                         
                         if (logoBase64) {
-                            doc.addImage(logoBase64, 'PNG', 15, 10, 50, 12.5);
+                            doc.addImage(logoBase64, 'PNG', 15, 10, 50, 0);
                         }
 
                         let startY = 38;
@@ -369,7 +369,8 @@
                                     const insights = await generatePlayerInsights(cleanPlayerName, fastballData);
                                     doc.setFontSize(12);
                                     doc.setFont('helvetica', 'bold');
-                                    doc.text('Player Insights', 15, startY);
+                                    // MODIFICATION: Changed "Player Insights" to "Fastball Characterization"
+                                    doc.text('Fastball Characterization', 15, startY);
                                     doc.setFontSize(10);
                                     doc.setFont('helvetica', 'normal');
                                     doc.text(doc.splitTextToSize(insights, 80), 15, startY + 8);
@@ -383,7 +384,6 @@
 
                                 const dynamicChartWidth = chartsToRender.length > 0 ? (282 - currentX) / chartsToRender.length : 0;
 
-                                // MODIFICATION: Added a plugin to set a white background for the charts
                                 const whiteBackgroundPlugin = {
                                     id: 'customCanvasBackgroundColor',
                                     beforeDraw: (chart) => {
@@ -505,10 +505,11 @@
                                 {(processingMode === 'both' || processingMode === 'pitchers') && (
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium text-slate-600">Report Options</label>
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                                             <label className="flex items-center space-x-2 cursor-pointer">
                                                 <input type="checkbox" checked={reportOptions.showInsights} onChange={(e) => setReportOptions({...reportOptions, showInsights: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                                <span className="text-sm text-slate-700">Insights</span>
+                                                {/* MODIFICATION: Changed "Insights" to "Fastball Characterization" */}
+                                                <span className="text-sm text-slate-700">Fastball Characterization</span>
                                             </label>
                                             <label className="flex items-center space-x-2 cursor-pointer">
                                                 <input type="checkbox" checked={reportOptions.showVeloSpinChart} onChange={(e) => setReportOptions({...reportOptions, showVeloSpinChart: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
