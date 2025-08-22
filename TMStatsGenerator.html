@@ -68,22 +68,22 @@
             
             <!-- Part 2: Join Files -->
             <div class="bg-white p-6 rounded-lg shadow-md">
-                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Part 2: Join and Create Final Report</h2>
-                <p class="text-sm text-gray-600 mb-4">Upload your corrected report from Part 1 and the second CSV file to join them.</p>
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Part 2: Iterative Data Joining</h2>
+                <p class="text-sm text-gray-600 mb-4">Load a base report (like the one from Part 1), then repeatedly join new data files to it.</p>
                 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                     <div>
-                        <label for="metricsFile" class="file-label cursor-pointer w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
+                        <label for="baseFile" class="file-label cursor-pointer w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
                             <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                            <span>Upload Ball Data</span>
+                            <span>Load Base Report File</span>
                         </label>
-                        <input type="file" id="metricsFile" class="hidden" accept=".csv">
-                        <p id="metricsFileList" class="mt-4 text-sm text-gray-500">No file selected.</p>
+                        <input type="file" id="baseFile" class="hidden" accept=".csv">
+                        <p id="baseFileList" class="mt-4 text-sm text-gray-500">No file loaded.</p>
                     </div>
                     <div>
                         <label for="joinFile" class="file-label cursor-pointer w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
                             <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4M4 7v10"></path></svg>
-                            <span>Upload Athletic Data</span>
+                            <span>Upload Additional Data File</span>
                         </label>
                         <input type="file" id="joinFile" class="hidden" accept=".csv">
                         <p id="joinFileList" class="mt-4 text-sm text-gray-500">No file selected.</p>
@@ -92,12 +92,12 @@
                 <div class="mt-4">
                     <label class="flex items-center">
                         <input type="checkbox" id="part2Underscores" class="form-checkbox h-5 w-5 text-purple-600" checked>
-                        <span class="ml-2 text-gray-700">Replace spaces with underscores in athletic data headers</span>
+                        <span class="ml-2 text-gray-700">Replace spaces with underscores in new headers</span>
                     </label>
                 </div>
-
                  <div class="flex flex-col sm:flex-row gap-4 mt-6">
-                    <button id="joinBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">Join and Download Final Report</button>
+                    <button id="joinBtn" class="w-full md:w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">Join Data</button>
+                    <button id="downloadBtn" class="w-full md:w-1/2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">Download Final Report</button>
                 </div>
             </div>
 
@@ -117,12 +117,16 @@
             const statusDiv = document.getElementById('status');
             const part1UnderscoresCheckbox = document.getElementById('part1Underscores');
             
-            const metricsFileInput = document.getElementById('metricsFile');
-            const metricsFileList = document.getElementById('metricsFileList');
+            const baseFileInput = document.getElementById('baseFile');
+            const baseFileList = document.getElementById('baseFileList');
             const joinFileInput = document.getElementById('joinFile');
             const joinFileList = document.getElementById('joinFileList');
             const joinBtn = document.getElementById('joinBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
             const part2UnderscoresCheckbox = document.getElementById('part2Underscores');
+
+            // --- Global State ---
+            let currentReport = { data: [], headers: [] };
 
             // --- Global Constants ---
             const PITCH_TYPES = ['Fastball', 'Sinker', 'Slider', 'CurveBall', 'ChangeUp', 'Splitter'];
@@ -143,15 +147,33 @@
             csvFilesInput.addEventListener('change', () => {
                 fileList.textContent = csvFilesInput.files.length > 0 ? `${csvFilesInput.files.length} file(s) selected.` : 'No files selected.';
             });
-            metricsFileInput.addEventListener('change', () => {
-                metricsFileList.textContent = metricsFileInput.files.length > 0 ? metricsFileInput.files[0].name : 'No file selected.';
+            baseFileInput.addEventListener('change', async () => {
+                baseFileList.textContent = baseFileInput.files.length > 0 ? baseFileInput.files[0].name : 'No file loaded.';
+                if (baseFileInput.files.length > 0) {
+                    try {
+                        currentReport = await readFile(baseFileInput.files[0]);
+                        log(`Base report "${baseFileInput.files[0].name}" loaded successfully.`, 'success');
+                        joinBtn.disabled = false;
+                        downloadBtn.disabled = false;
+                    } catch (e) {
+                         log(`Error loading base report: ${e.message}`, 'error');
+                    }
+                }
             });
             joinFileInput.addEventListener('change', () => {
                 joinFileList.textContent = joinFileInput.files.length > 0 ? joinFileInput.files[0].name : 'No file selected.';
             });
             
             processBtn.addEventListener('click', handlePart1Generation);
-            joinBtn.addEventListener('click', handlePart2JoinAndDownload);
+            joinBtn.addEventListener('click', handlePart2Join);
+            downloadBtn.addEventListener('click', () => {
+                 if (currentReport.data.length > 0) {
+                    const csvString = createCSVString(currentReport.data, currentReport.headers);
+                    triggerDownload(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }), 'final_report.csv');
+                 } else {
+                    log('No report data is loaded to download.', 'error');
+                 }
+            });
 
             // --- Core Functions ---
             async function handlePart1Generation() {
@@ -178,10 +200,8 @@
                         const allPlayerRows = grouped[rawPlayerName];
 
                         const hittingRows = allPlayerRows.filter(r => r.PracticeType?.toLowerCase() === 'hitting');
-                        // Any non-hitting practice type is considered pitching for this logic
                         const pitchingRows = allPlayerRows.filter(r => r.PracticeType && r.PracticeType.toLowerCase() !== 'hitting');
                         
-                        // Add rows with missing practice type to the failed list
                         allPlayerRows.filter(r => !r.PracticeType).forEach(row => {
                             row.Error_Reason = 'Missing Practice_Type.';
                             failed.push(row);
@@ -204,13 +224,11 @@
 
                             if (hittingRows.length > 0 && pitchingRows.length > 0) {
                                 practiceType = '2-Way';
-                                const hittingMetrics = calculateHittingMetrics(hittingRows);
-                                const pitchingMetrics = calculatePitchingMetrics(pitchingRows);
-                                finalMetrics = { ...hittingMetrics, ...pitchingMetrics };
+                                finalMetrics = { ...calculateHittingMetrics(hittingRows), ...calculatePitchingMetrics(pitchingRows) };
                             } else if (hittingRows.length > 0) {
                                 practiceType = 'Hitting';
                                 finalMetrics = calculateHittingMetrics(hittingRows);
-                            } else if (pitchingRows.length > 0) {
+                            } else {
                                 practiceType = 'Pitching';
                                 finalMetrics = calculatePitchingMetrics(pitchingRows);
                             }
@@ -225,7 +243,7 @@
                     
                     const reportCsvString = createCSVString(reportData, displayHeaders);
 
-                    let successMessage = 'Part 1 report downloaded successfully. You can now manually edit it before proceeding to Part 2.';
+                    let successMessage = 'Part 1 report downloaded successfully. You can now load it in Part 2 to begin joining data.';
 
                     if (failed.length > 0) {
                         const errorHeaders = [...new Set(failed.flatMap(Object.keys))];
@@ -243,7 +261,6 @@
 
                 } catch (error) {
                     log(`An error occurred in Part 1: ${error.message}`, 'error');
-                    console.error(error);
                 } finally {
                     processBtn.disabled = false;
                     processBtnText.textContent = 'Generate & Download Report';
@@ -251,24 +268,25 @@
                 }
             }
 
-            async function handlePart2JoinAndDownload() {
-                const metricsFile = metricsFileInput.files[0];
+            async function handlePart2Join() {
+                if (currentReport.data.length === 0) {
+                    log('Please load a base report file first.', 'error');
+                    return;
+                }
                 const joinFile = joinFileInput.files[0];
-
-                if (!metricsFile || !joinFile) {
-                    log('Please select both the Ball Data and the Athletic Data file for Part 2.', 'error');
+                if (!joinFile) {
+                    log('Please select an "Additional Data File" to join.', 'error');
                     return;
                 }
 
                 joinBtn.disabled = true;
                 joinBtn.textContent = 'Joining...';
-                log('Reading files for joining...', 'info');
+                log('Reading additional data file...', 'info');
 
                 try {
-                    const [metricsFileData, joinFileData] = await Promise.all([readFile(metricsFile), readFile(joinFile)]);
-                    log('Files read. Merging data...', 'info');
+                    const joinFileData = await readFile(joinFile);
+                    log('File read. Merging data...', 'info');
                     
-                    const failedRows = [];
                     const useUnderscores = part2UnderscoresCheckbox.checked;
 
                     const dynamicJoinHeaders = joinFileData.headers.filter(h => 
@@ -285,26 +303,17 @@
                         const firstName = row[joinFirstNameHeader]?.trim().toLowerCase();
                         if (lastName && firstName) {
                             joinMap.set(`${lastName}|${firstName}`, row);
-                        } else {
-                            row.Error_Reason = 'Missing Last_Name or First_Name in Athletic Data file.';
-                            failedRows.push(row);
                         }
                     });
 
-                    const metricsLastNameHeader = metricsFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'last name');
-                    const metricsFirstNameHeader = metricsFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'first name');
+                    const metricsLastNameHeader = currentReport.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'last name');
+                    const metricsFirstNameHeader = currentReport.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'first name');
 
-                    const finalReport = metricsFileData.data.map(metricsRow => {
+                    const newReportData = currentReport.data.map(metricsRow => {
                         const lastName = metricsRow[metricsLastNameHeader]?.trim().toLowerCase();
                         const firstName = metricsRow[metricsFirstNameHeader]?.trim().toLowerCase();
-                        
-                        if (!lastName || !firstName) {
-                            metricsRow.Error_Reason = 'Missing Last_Name or First_Name in Ball Data file.';
-                            failedRows.push(metricsRow);
-                            return null;
-                        }
-
                         const key = `${lastName}|${firstName}`;
+                        
                         const mergedRow = { ...metricsRow };
 
                         if (joinMap.has(key)) {
@@ -315,32 +324,21 @@
                             });
                         }
                         return mergedRow;
-                    }).filter(Boolean);
+                    });
                     
-                    const finalHeaders = [...metricsFileData.headers, ...finalDynamicHeaders];
-                    const finalReportCsvString = createCSVString(finalReport, finalHeaders);
-                    
-                    let successMessage = 'Final report downloaded successfully!';
-                    if (failedRows.length > 0) {
-                        const errorHeaders = [...new Set(failedRows.flatMap(Object.keys))];
-                        const errorCsvString = createCSVString(failedRows, errorHeaders);
-                        const filesToZip = [
-                            { name: 'final_joined_report.csv', content: finalReportCsvString },
-                            { name: 'part_2_join_errors.csv', content: errorCsvString }
-                        ];
-                        await downloadZip(filesToZip, 'part_2_reports.zip');
-                        successMessage = `A .zip file with the final report and ${failedRows.length} rows that failed to join has been downloaded.`;
-                    } else {
-                        triggerDownload(new Blob([finalReportCsvString], { type: 'text/csv;charset=utf-8;' }), 'final_joined_report.csv');
-                    }
-                    log(successMessage, 'success');
+                    // Update the global state with the new, merged data
+                    currentReport.data = newReportData;
+                    currentReport.headers = [...currentReport.headers, ...finalDynamicHeaders];
+
+                    log(`Join successful. Report now has ${currentReport.headers.length} columns. You can join another file or download the result.`, 'success');
+                    joinFileInput.value = ''; // Clear the file input
+                    joinFileList.textContent = 'No file selected.';
 
                 } catch (error) {
                     log(`An error occurred during the join process: ${error.message}`, 'error');
-                    console.error(error);
                 } finally {
                     joinBtn.disabled = false;
-                    joinBtn.textContent = 'Join and Download Final Report';
+                    joinBtn.textContent = 'Join Data';
                 }
             }
 
