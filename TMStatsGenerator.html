@@ -34,7 +34,7 @@
     <div class="container mx-auto p-4 sm:p-6 lg:p-8 max-w-4xl">
         <header class="text-center mb-8">
             <div class="flex justify-center items-center">
-                <img src="https://app.curvetestcenters.com/_next/image?url=%2Flogos%2FPNG%2Fcurve-2.0-logo_full-hrz-logo-only.png&w=1920&q=75" alt="Curve Logo" class="w-40 h-auto mr-4">
+                <img src="https://app.curvetestcenters.com/_next/image?url=%2Flogos%2FPNG%2Fcurve-2.0-logo_full-hrz-logo-only.png&w=1920&q=75" alt="Curve Logo" class="w-40 h-auto mr-4" onerror="this.onerror=null;this.src='https://placehold.co/160x40/cccccc/000000?text=Curve+Logo';">
                 <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Player Report Generator</h1>
             </div>
             <p class="mt-2 text-md text-gray-600">A two-part tool to process and merge player data.</p>
@@ -168,10 +168,10 @@
             joinBtn.addEventListener('click', handlePart2Join);
             downloadBtn.addEventListener('click', () => {
                  if (currentReport.data.length > 0) {
-                    const csvString = createCSVString(currentReport.data, currentReport.headers);
-                    triggerDownload(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }), 'final_report.csv');
+                     const csvString = createCSVString(currentReport.data, currentReport.headers);
+                     triggerDownload(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }), 'final_report.csv');
                  } else {
-                    log('No report data is loaded to download.', 'error');
+                     log('No report data is loaded to download.', 'error');
                  }
             });
 
@@ -196,8 +196,9 @@
                     const { grouped, failed } = groupDataByPlayer(combinedData);
                     
                     const reportData = [];
-                    for (const rawPlayerName in grouped) {
-                        const allPlayerRows = grouped[rawPlayerName];
+                    for (const groupKey in grouped) {
+                        const allPlayerRows = grouped[groupKey];
+                        const rawPlayerName = allPlayerRows[0].Batter || allPlayerRows[0].Pitcher;
 
                         const hittingRows = allPlayerRows.filter(r => r.PracticeType?.toLowerCase() === 'hitting');
                         const pitchingRows = allPlayerRows.filter(r => r.PracticeType && r.PracticeType.toLowerCase() !== 'hitting');
@@ -289,14 +290,21 @@
                     
                     const useUnderscores = part2UnderscoresCheckbox.checked;
 
-                    const dynamicJoinHeaders = joinFileData.headers.filter(h => 
-                        h.toLowerCase() !== 'last name' && h.toLowerCase() !== 'first name'
-                    );
+                    // Find headers in the join file to add, excluding name columns
+                    const dynamicJoinHeaders = joinFileData.headers.filter(h => {
+                        const normalizedHeader = h.toLowerCase().replace(/[_ ]/g, '');
+                        return normalizedHeader !== 'lastname' && normalizedHeader !== 'firstname';
+                    });
                     const finalDynamicHeaders = useUnderscores ? dynamicJoinHeaders.map(h => h.replace(/ /g, '_').replace(/#/g, '')) : dynamicJoinHeaders;
 
+                    // Build a map of players from the join file for quick lookup
                     const joinMap = new Map();
-                    const joinLastNameHeader = joinFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'last name');
-                    const joinFirstNameHeader = joinFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'first name');
+                    const joinLastNameHeader = joinFileData.headers.find(h => h.toLowerCase().replace(/[_ ]/g, '') === 'lastname');
+                    const joinFirstNameHeader = joinFileData.headers.find(h => h.toLowerCase().replace(/[_ ]/g, '') === 'firstname');
+
+                    if (!joinLastNameHeader || !joinFirstNameHeader) {
+                        throw new Error('The "Additional Data File" must contain "Last Name" and "First Name" columns.');
+                    }
 
                     joinFileData.data.forEach(row => {
                         const lastName = row[joinLastNameHeader]?.trim().toLowerCase();
@@ -306,13 +314,21 @@
                         }
                     });
 
-                    const metricsLastNameHeader = currentReport.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'last name');
-                    const metricsFirstNameHeader = currentReport.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'first name');
+                    // Find name headers in the base report
+                    const metricsLastNameHeader = currentReport.headers.find(h => h.toLowerCase().replace(/[_ ]/g, '') === 'lastname');
+                    const metricsFirstNameHeader = currentReport.headers.find(h => h.toLowerCase().replace(/[_ ]/g, '') === 'firstname');
+                     if (!metricsLastNameHeader || !metricsFirstNameHeader) {
+                        throw new Error('The "Base Report File" must contain "Last Name" and "First Name" columns.');
+                    }
+                    
+                    const processedPlayers = new Set();
 
+                    // Iterate through the base report and merge data from the join file
                     const newReportData = currentReport.data.map(metricsRow => {
                         const lastName = metricsRow[metricsLastNameHeader]?.trim().toLowerCase();
                         const firstName = metricsRow[metricsFirstNameHeader]?.trim().toLowerCase();
                         const key = `${lastName}|${firstName}`;
+                        processedPlayers.add(key);
                         
                         const mergedRow = { ...metricsRow };
 
@@ -320,18 +336,51 @@
                             const joinRow = joinMap.get(key);
                             dynamicJoinHeaders.forEach((headerWithSpace, index) => {
                                 const finalHeader = finalDynamicHeaders[index];
-                                mergedRow[finalHeader] = joinRow[headerWithSpace] || '';
+                                const originalHeaderKey = headerWithSpace.replace(/ /g, '_');
+                                const finalHeaderKey = finalHeader.replace(/ /g, '_');
+                                mergedRow[finalHeaderKey] = joinRow[headerWithSpace] || '';
                             });
                         }
                         return mergedRow;
                     });
                     
-                    // Update the global state with the new, merged data
+                    // Add players from the join file that were not in the base report
+                    joinFileData.data.forEach(joinRow => {
+                        const lastName = joinRow[joinLastNameHeader]?.trim().toLowerCase();
+                        const firstName = joinRow[joinFirstNameHeader]?.trim().toLowerCase();
+                        const key = `${lastName}|${firstName}`;
+
+                        if (lastName && firstName && !processedPlayers.has(key)) {
+                            const newRow = {};
+                            // Initialize with empty values for all existing headers
+                            currentReport.headers.forEach(h => newRow[h.replace(/ /g, '_')] = '');
+                            
+                            // Add name info
+                            newRow[metricsLastNameHeader.replace(/ /g, '_')] = joinRow[joinLastNameHeader];
+                            newRow[metricsFirstNameHeader.replace(/ /g, '_')] = joinRow[joinFirstNameHeader];
+
+                            // Add the new data from the join file
+                            dynamicJoinHeaders.forEach((headerWithSpace, index) => {
+                                const finalHeader = finalDynamicHeaders[index];
+                                newRow[finalHeader.replace(/ /g, '_')] = joinRow[headerWithSpace] || '';
+                            });
+                            newReportData.push(newRow);
+                        }
+                    });
+
+                    // Update the current report state
                     currentReport.data = newReportData;
-                    currentReport.headers = [...currentReport.headers, ...finalDynamicHeaders];
+                    const newHeaders = [...currentReport.headers];
+                    finalDynamicHeaders.forEach(h => {
+                        if (!newHeaders.includes(h)) {
+                            newHeaders.push(h);
+                        }
+                    });
+                    currentReport.headers = newHeaders;
+
 
                     log(`Join successful. Report now has ${currentReport.headers.length} columns. You can join another file or download the result.`, 'success');
-                    joinFileInput.value = ''; // Clear the file input
+                    joinFileInput.value = '';
                     joinFileList.textContent = 'No file selected.';
 
                 } catch (error) {
@@ -423,7 +472,7 @@
                 }
 
                 if (!postCommaPart) {
-                     return { lastName, firstName, graduationYear, appointmentId };
+                        return { lastName, firstName, graduationYear, appointmentId };
                 }
 
                 if (postCommaPart.includes('#')) {
@@ -443,24 +492,31 @@
             }
 
              function groupData(data, key) {
-                return data.reduce((acc, row) => {
-                    const groupKey = row[key];
-                    if (groupKey) {
-                        if (!acc[groupKey]) acc[groupKey] = [];
-                        acc[groupKey].push(row);
-                    }
-                    return acc;
-                }, {});
+                 return data.reduce((acc, row) => {
+                     const groupKey = row[key];
+                     if (groupKey) {
+                         if (!acc[groupKey]) acc[groupKey] = [];
+                         acc[groupKey].push(row);
+                     }
+                     return acc;
+                 }, {});
             }
 
             function groupDataByPlayer(data) {
                 const grouped = {};
                 const failed = [];
                 data.forEach(row => {
-                    const playerName = row.Batter || row.Pitcher;
-                    if (playerName) {
-                        if (!grouped[playerName]) grouped[playerName] = [];
-                        grouped[playerName].push(row);
+                    const rawPlayerName = row.Batter || row.Pitcher;
+                    if (rawPlayerName) {
+                        const { lastName, firstName } = parsePlayerName(rawPlayerName);
+                        const normalizedKey = `${lastName.trim().toLowerCase()}|${firstName.trim().toLowerCase()}`;
+                        if (normalizedKey !== '|') {
+                           if (!grouped[normalizedKey]) grouped[normalizedKey] = [];
+                           grouped[normalizedKey].push(row);
+                        } else {
+                           row.Error_Reason = 'Could not parse a valid name from Batter/Pitcher field.';
+                           failed.push(row);
+                        }
                     } else {
                         row.Error_Reason = 'Missing Batter/Pitcher name.';
                         failed.push(row);
@@ -557,8 +613,8 @@
                 const csvRows = [headers.join(',')];
                 data.forEach(row => {
                     const values = headers.map(header => {
-                        const key = header.replace(/ /g, '_');
-                        const val = row[key] !== undefined ? row[key] : '';
+                        const keyWithUnderscore = header.replace(/ /g, '_');
+                        const val = row[keyWithUnderscore] !== undefined ? row[keyWithUnderscore] : (row[header] !== undefined ? row[header] : '');
                         const escaped = ('' + val).replace(/"/g, '""');
                         return `"${escaped}"`;
                     });
