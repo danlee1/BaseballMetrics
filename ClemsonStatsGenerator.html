@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clemson Player Report Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .file-label {
+            transition: all 0.2s ease-in-out;
+        }
+        .file-label:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .spinner {
+            border-top-color: transparent;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8 max-w-4xl">
+        <header class="text-center mb-8">
+            <div class="flex justify-center items-center">
+                <img src="https://app.curvetestcenters.com/_next/image?url=%2Flogos%2FPNG%2Fcurve-2.0-logo_full-hrz-logo-only.png&w=1920&q=75" alt="Curve Logo" class="w-40 h-auto mr-4" onerror="this.style.display='none'">
+                <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Clemson Player Report Generator</h1>
+            </div>
+            <p class="mt-2 text-md text-gray-600">A two-part tool to process and merge player data.</p>
+        </header>
+
+        <main class="space-y-8">
+            <!-- Part 1: Generate Initial Report -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Part 1: Generate Player Metrics Report</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                    <div>
+                        <label for="hittingFiles" class="file-label cursor-pointer w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
+                            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                            <span>Select Hitting Files</span>
+                        </label>
+                        <input type="file" id="hittingFiles" class="hidden" multiple accept=".csv">
+                        <p id="hittingFileList" class="mt-4 text-sm text-gray-500">No hitting files selected.</p>
+                    </div>
+                    <div>
+                        <label for="pitchingFiles" class="file-label cursor-pointer w-full bg-teal-600 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
+                           <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                            <span>Select Pitching Files</span>
+                        </label>
+                        <input type="file" id="pitchingFiles" class="hidden" multiple accept=".csv">
+                        <p id="pitchingFileList" class="mt-4 text-sm text-gray-500">No pitching files selected.</p>
+                    </div>
+                </div>
+                <div class="mt-6">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="part1Underscores" class="form-checkbox h-5 w-5 text-blue-600" checked>
+                        <span class="ml-2 text-gray-700">Replace spaces with underscores in headers</span>
+                    </label>
+                </div>
+                 <div class="flex flex-col sm:flex-row gap-4 mt-4">
+                    <button id="processBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed inline-flex items-center justify-center">
+                        <span id="processBtnText">Generate & Download Report</span>
+                        <div id="spinner" class="spinner border-4 border-white rounded-full ml-3 hidden"></div>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Part 2: Join Files -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Part 2: Iterative Data Joining</h2>
+                <p class="text-sm text-gray-600 mb-4">Load a base report (like the one from Part 1), then repeatedly join new data files to it.</p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                    <div>
+                        <label for="baseFile" class="file-label cursor-pointer w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
+                            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            <span>Load Base Report File</span>
+                        </label>
+                        <input type="file" id="baseFile" class="hidden" accept=".csv">
+                        <p id="baseFileList" class="mt-4 text-sm text-gray-500">No file loaded.</p>
+                    </div>
+                    <div>
+                        <label for="joinFile" class="file-label cursor-pointer w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg inline-flex items-center justify-center">
+                            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4M4 7v10"></path></svg>
+                            <span>Upload Additional Data File</span>
+                        </label>
+                        <input type="file" id="joinFile" class="hidden" accept=".csv">
+                        <p id="joinFileList" class="mt-4 text-sm text-gray-500">No file selected.</p>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="part2Underscores" class="form-checkbox h-5 w-5 text-purple-600" checked>
+                        <span class="ml-2 text-gray-700">Replace spaces with underscores in new headers</span>
+                    </label>
+                </div>
+                 <div class="flex flex-col sm:flex-row gap-4 mt-6">
+                    <button id="joinBtn" class="w-full md:w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">Join Data</button>
+                    <button id="downloadBtn" class="w-full md:w-1/2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-sm hover:shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed">Download Final Report</button>
+                </div>
+            </div>
+
+            <!-- Status Area -->
+            <div id="status" class="mt-4 p-4 bg-gray-50 rounded-lg text-sm min-h-[50px]"></div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Element References ---
+            const hittingFilesInput = document.getElementById('hittingFiles');
+            const hittingFileList = document.getElementById('hittingFileList');
+            const pitchingFilesInput = document.getElementById('pitchingFiles');
+            const pitchingFileList = document.getElementById('pitchingFileList');
+            const processBtn = document.getElementById('processBtn');
+            const processBtnText = document.getElementById('processBtnText');
+            const spinner = document.getElementById('spinner');
+            const statusDiv = document.getElementById('status');
+            const part1UnderscoresCheckbox = document.getElementById('part1Underscores');
+            
+            const baseFileInput = document.getElementById('baseFile');
+            const baseFileList = document.getElementById('baseFileList');
+            const joinFileInput = document.getElementById('joinFile');
+            const joinFileList = document.getElementById('joinFileList');
+            const joinBtn = document.getElementById('joinBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const part2UnderscoresCheckbox = document.getElementById('part2Underscores');
+
+            // --- Global State ---
+            let currentReport = { data: [], headers: [] };
+
+            // --- Global Constants ---
+            const PITCHING_METRICS = ['Peak_Velocity', 'Average_Velocity', 'Average_IVB', 'Average_HB', 'Average_SpinRate', 'Strike_%', 'Count'];
+            
+            const basePart1Headers = [
+                'Last_Name', 'First_Name', 'Graduation_Year', 'Appointment_ID', 'Date', 'Practice_Type', 
+                'Peak_Exit_Velocity', 'EV_50', 'Launch_Angle_(0-30%)', 'Hard_Hit_%', 'Barrel_%', 'Hit_Count', 'Frame_Count', 'Hitter_Ball_Score'
+            ];
+
+            PITCHING_METRICS.forEach(metric => {
+                basePart1Headers.push(`Fastball_${metric}`);
+            });
+
+            basePart1Headers.push('Total_Pitches');
+            basePart1Headers.push('Fastball_IVB50_Scale');
+            basePart1Headers.push('Fastball_HB50_Scale');
+            basePart1Headers.push('Fastball_VAA50_Scale');
+            basePart1Headers.push('Pitcher_Ball_Score');
+
+            // --- Event Listeners ---
+            hittingFilesInput.addEventListener('change', () => {
+                hittingFileList.textContent = hittingFilesInput.files.length > 0 ? `${hittingFilesInput.files.length} hitting file(s) selected.` : 'No hitting files selected.';
+            });
+            pitchingFilesInput.addEventListener('change', () => {
+                pitchingFileList.textContent = pitchingFilesInput.files.length > 0 ? `${pitchingFilesInput.files.length} pitching file(s) selected.` : 'No pitching files selected.';
+            });
+            baseFileInput.addEventListener('change', async () => {
+                baseFileList.textContent = baseFileInput.files.length > 0 ? baseFileInput.files[0].name : 'No file loaded.';
+                if (baseFileInput.files.length > 0) {
+                    try {
+                        currentReport = await readFile(baseFileInput.files[0]);
+                        log(`Base report "${baseFileInput.files[0].name}" loaded successfully.`, 'success');
+                        joinBtn.disabled = false;
+                        downloadBtn.disabled = false;
+                    } catch (e) {
+                         log(`Error loading base report: ${e.message}`, 'error');
+                    }
+                }
+            });
+            joinFileInput.addEventListener('change', () => {
+                joinFileList.textContent = joinFileInput.files.length > 0 ? joinFileInput.files[0].name : 'No file selected.';
+            });
+            
+            processBtn.addEventListener('click', handlePart1Generation);
+            joinBtn.addEventListener('click', handlePart2Join);
+            downloadBtn.addEventListener('click', () => {
+                 if (currentReport.data.length > 0) {
+                    const csvString = createCSVString(currentReport.data, currentReport.headers);
+                    triggerDownload(new Blob([csvString], { type: 'text/csv;charset=utf-8;' }), 'final_report.csv');
+                 } else {
+                     log('No report data is loaded to download.', 'error');
+                 }
+            });
+
+            // --- Core Functions ---
+            async function handlePart1Generation() {
+                const hittingFiles = [...hittingFilesInput.files];
+                const pitchingFiles = [...pitchingFilesInput.files];
+                
+                if (hittingFiles.length === 0 && pitchingFiles.length === 0) {
+                    log('Please select at least one hitting or pitching CSV file for Part 1.', 'error');
+                    return;
+                }
+
+                processBtn.disabled = true;
+                processBtnText.textContent = 'Processing...';
+                spinner.classList.remove('hidden');
+                log('Starting Part 1 report generation...', 'info');
+
+                try {
+                    const playerDataMap = {};
+                    const hitterKeys = new Set();
+                    const pitcherKeys = new Set();
+                    const failedRows = [];
+
+                    const normalizeName = (fullName) => {
+                        if (!fullName) return { key: '|', name: {} };
+                        const nameParts = parsePlayerName(fullName);
+                        const key = `${nameParts.lastName.trim().toLowerCase()}|${nameParts.firstName.trim().toLowerCase()}`;
+                        return { key, name: nameParts };
+                    };
+                    
+                    const processFiles = async (files, type) => {
+                        for (const file of files) {
+                            try {
+                                const { data } = await readFile(file);
+                                data.forEach(row => {
+                                    const nameColumn = type === 'hitter' ? row.Batter : row.Pitcher;
+                                    if (nameColumn && nameColumn.trim() !== '') {
+                                        const { key } = normalizeName(nameColumn);
+                                        if (key !== '|') {
+                                            if (!playerDataMap[key]) playerDataMap[key] = [];
+                                            playerDataMap[key].push(row);
+                                            if (type === 'hitter') hitterKeys.add(key);
+                                            if (type === 'pitcher') pitcherKeys.add(key);
+                                        } else {
+                                            row.Error_Reason = `Could not parse a valid name from ${type === 'hitter' ? 'Batter' : 'Pitcher'} field.`;
+                                            failedRows.push(row);
+                                        }
+                                    }
+                                });
+                            } catch (e) {
+                                log(`Error processing file ${file.name}: ${e.message}`, 'error');
+                            }
+                        }
+                    };
+
+                    await processFiles(hittingFiles, 'hitter');
+                    await processFiles(pitchingFiles, 'pitcher');
+                    
+                    const reportData = [];
+                    for (const groupKey in playerDataMap) {
+                        const allPlayerRows = playerDataMap[groupKey];
+                        const rawPlayerName = allPlayerRows[0].Pitcher || allPlayerRows[0].Batter;
+
+                        const { lastName, firstName, graduationYear, appointmentId } = parsePlayerName(rawPlayerName);
+                        const date = allPlayerRows[0]?.Date || '';
+
+                        const baseRow = {};
+                        basePart1Headers.forEach(h => baseRow[h] = '');
+                        baseRow.Last_Name = lastName;
+                        baseRow.First_Name = firstName;
+                        baseRow.Graduation_Year = graduationYear;
+                        baseRow.Appointment_ID = appointmentId;
+                        baseRow.Date = date;
+
+                        let finalMetrics = {};
+                        let practiceType = '';
+                        
+                        const isPitcher = pitcherKeys.has(groupKey);
+                        const isHitter = hitterKeys.has(groupKey);
+
+                        if (isPitcher && isHitter) {
+                            practiceType = 'Hitting & Pitching';
+                            const pitchingMetrics = calculatePitchingMetrics(allPlayerRows, groupKey);
+                            const hittingMetrics = calculateHittingMetrics(allPlayerRows, groupKey);
+                            finalMetrics = {...hittingMetrics, ...pitchingMetrics};
+                        } else if (isPitcher) {
+                            practiceType = 'Pitching';
+                            finalMetrics = calculatePitchingMetrics(allPlayerRows, groupKey);
+                        } else if (isHitter) {
+                            practiceType = 'Hitting';
+                            finalMetrics = calculateHittingMetrics(allPlayerRows, groupKey);
+                        }
+
+                        baseRow.Practice_Type = practiceType;
+                        reportData.push({ ...baseRow, ...finalMetrics });
+                    }
+                    
+                    const useUnderscores = part1UnderscoresCheckbox.checked;
+                    const displayHeaders = useUnderscores ? basePart1Headers : basePart1Headers.map(h => h.replace(/_/g, ' '));
+                    
+                    const reportCsvString = createCSVString(reportData, displayHeaders);
+
+                    let successMessage = 'Part 1 report downloaded successfully. You can now load it in Part 2 to begin joining data.';
+
+                    if (failedRows.length > 0) {
+                        const errorHeaders = [...new Set(failedRows.flatMap(Object.keys))];
+                        const errorCsvString = createCSVString(failedRows, errorHeaders);
+                        const filesToZip = [
+                            { name: 'part_1_metrics_report.csv', content: reportCsvString },
+                            { name: 'part_1_errors.csv', content: errorCsvString }
+                        ];
+                        await downloadZip(filesToZip, 'part_1_reports.zip');
+                        successMessage = `A .zip file with the report and ${failedRows.length} unprocessed rows has been downloaded.`;
+                    } else {
+                        triggerDownload(new Blob([reportCsvString], { type: 'text/csv;charset=utf-8;' }), 'part_1_metrics_report.csv');
+                    }
+                    log(successMessage, 'success');
+
+                } catch (error) {
+                    log(`An error occurred in Part 1: ${error.message}`, 'error');
+                    console.error(error);
+                } finally {
+                    processBtn.disabled = false;
+                    processBtnText.textContent = 'Generate & Download Report';
+                    spinner.classList.add('hidden');
+                }
+            }
+
+            async function handlePart2Join() {
+                if (currentReport.data.length === 0) {
+                    log('Please load a base report file first.', 'error');
+                    return;
+                }
+                const joinFile = joinFileInput.files[0];
+                if (!joinFile) {
+                    log('Please select an "Additional Data File" to join.', 'error');
+                    return;
+                }
+
+                joinBtn.disabled = true;
+                joinBtn.textContent = 'Joining...';
+                log('Reading additional data file...', 'info');
+
+                try {
+                    const joinFileData = await readFile(joinFile);
+                    log('File read. Merging data...', 'info');
+                    
+                    const useUnderscores = part2UnderscoresCheckbox.checked;
+
+                    const dynamicJoinHeaders = joinFileData.headers.filter(h => 
+                        h.toLowerCase() !== 'last name' && h.toLowerCase() !== 'first name'
+                    );
+                    const finalDynamicHeaders = useUnderscores ? dynamicJoinHeaders.map(h => h.replace(/ /g, '_').replace(/#/g, '')) : dynamicJoinHeaders;
+
+                    const joinMap = new Map();
+                    const joinLastNameHeader = joinFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'last name');
+                    const joinFirstNameHeader = joinFileData.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'first name');
+
+                    joinFileData.data.forEach(row => {
+                        const lastName = row[joinLastNameHeader]?.trim().toLowerCase();
+                        const firstName = row[joinFirstNameHeader]?.trim().toLowerCase();
+                        if (lastName && firstName) {
+                            joinMap.set(`${lastName}|${firstName}`, row);
+                        }
+                    });
+
+                    const metricsLastNameHeader = currentReport.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'last name');
+                    const metricsFirstNameHeader = currentReport.headers.find(h => h.toLowerCase().replace(/_/g, ' ') === 'first name');
+                    
+                    const processedPlayers = new Set();
+
+                    const newReportData = currentReport.data.map(metricsRow => {
+                        const lastName = metricsRow[metricsLastNameHeader]?.trim().toLowerCase();
+                        const firstName = metricsRow[metricsFirstNameHeader]?.trim().toLowerCase();
+                        const key = `${lastName}|${firstName}`;
+                        processedPlayers.add(key);
+                        
+                        const mergedRow = { ...metricsRow };
+
+                        if (joinMap.has(key)) {
+                            const joinRow = joinMap.get(key);
+                            dynamicJoinHeaders.forEach((headerWithSpace, index) => {
+                                const finalHeader = finalDynamicHeaders[index];
+                                mergedRow[finalHeader] = joinRow[headerWithSpace] || '';
+                            });
+                        }
+                        return mergedRow;
+                    });
+                    
+                    joinFileData.data.forEach(joinRow => {
+                        const lastName = joinRow[joinLastNameHeader]?.trim().toLowerCase();
+                        const firstName = joinRow[joinFirstNameHeader]?.trim().toLowerCase();
+                        const key = `${lastName}|${firstName}`;
+
+                        if (lastName && firstName && !processedPlayers.has(key)) {
+                            const newRow = {};
+                            currentReport.headers.forEach(h => newRow[h.replace(/ /g, '_')] = '');
+                            newRow.Last_Name = joinRow[joinLastNameHeader];
+                            newRow.First_Name = joinRow[joinFirstNameHeader];
+
+                            dynamicJoinHeaders.forEach((headerWithSpace, index) => {
+                                const finalHeader = finalDynamicHeaders[index];
+                                newRow[finalHeader] = joinRow[headerWithSpace] || '';
+                            });
+                            newReportData.push(newRow);
+                        }
+                    });
+
+                    currentReport.data = newReportData;
+                    currentReport.headers = [...new Set([...currentReport.headers, ...finalDynamicHeaders])];
+
+                    log(`Join successful. Report now has ${currentReport.headers.length} columns. You can join another file or download the result.`, 'success');
+                    joinFileInput.value = '';
+                    joinFileList.textContent = 'No file selected.';
+
+                } catch (error) {
+                    log(`An error occurred during the join process: ${error.message}`, 'error');
+                } finally {
+                    joinBtn.disabled = false;
+                    joinBtn.textContent = 'Join Data';
+                }
+            }
+
+            function readFile(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const text = event.target.result;
+                            const parsed = parseCSV(text);
+                            resolve(parsed);
+                        } catch (e) {
+                            reject(new Error(`Failed to parse ${file.name}: ${e.message}`));
+                        }
+                    };
+                    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+                    reader.readAsText(file);
+                });
+            }
+            
+            function parseCSV(text) {
+                const lines = text.trim().split(/\r?\n/);
+                if (lines.length < 1) return { data: [], headers: [] };
+
+                const parseLine = (line) => {
+                    const values = [];
+                    let currentVal = '';
+                    let inQuotes = false;
+                    for (let i = 0; i < line.length; i++) {
+                        const char = line[i];
+                        if (char === '"') {
+                            if (inQuotes && line[i + 1] === '"') {
+                                currentVal += '"';
+                                i++;
+                            } else {
+                                inQuotes = !inQuotes;
+                            }
+                        } else if (char === ',' && !inQuotes) {
+                            values.push(currentVal.trim());
+                            currentVal = '';
+                        } else {
+                            currentVal += char;
+                        }
+                    }
+                    values.push(currentVal.trim());
+                    return values;
+                };
+
+                const headers = parseLine(lines[0]).map(h => h.trim().replace(/"/g, ''));
+                
+                const data = lines.slice(1).map(line => {
+                    if (!line) return null;
+                    const values = parseLine(line);
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = values[index] ? values[index].replace(/"/g, '') : '';
+                    });
+                    return row;
+                }).filter(Boolean);
+
+                return { data, headers };
+            }
+            
+            function parsePlayerName(fullName) {
+                if (!fullName) return { lastName: '', firstName: '', graduationYear: '', appointmentId: '' };
+                
+                const nameSplit = fullName.split(',');
+                let preCommaPart = nameSplit[0] ? nameSplit[0].trim() : '';
+                let postCommaPart = nameSplit[1] ? nameSplit[1].trim() : '';
+
+                let lastName = '';
+                let graduationYear = '';
+                let firstName = '';
+                let appointmentId = '';
+
+                const yearMatch = preCommaPart.match(/(.*\D)?\s*(\d{4})$/);
+                if (yearMatch) {
+                    lastName = yearMatch[1] ? yearMatch[1].trim() : '';
+                    graduationYear = yearMatch[2];
+                } else {
+                    lastName = preCommaPart;
+                }
+
+                if (!postCommaPart) {
+                     return { lastName, firstName, graduationYear, appointmentId };
+                }
+
+                if (postCommaPart.includes('#')) {
+                    const idSplit = postCommaPart.split('#');
+                    firstName = idSplit[0].trim();
+                    appointmentId = idSplit[1] || '';
+                } else {
+                    const match = postCommaPart.match(/^(.*\D)?(\d+.*)$/);
+                    if (match) {
+                        firstName = match[1] ? match[1].trim() : '';
+                        appointmentId = match[2] ? match[2].trim() : '';
+                    } else {
+                        firstName = postCommaPart;
+                    }
+                }
+                return { lastName, firstName, graduationYear, appointmentId };
+            }
+
+            // --- METRIC CALCULATION FUNCTIONS ---
+            
+            function calculateHittingMetrics(rows, playerGroupKey) {
+                const hittingRows = rows.filter(r => {
+                    if (!r.Batter || r.Batter.trim() === '') return false;
+                    const { lastName, firstName } = parsePlayerName(r.Batter);
+                    const batterKey = `${lastName.trim().toLowerCase()}|${firstName.trim().toLowerCase()}`;
+                    return batterKey === playerGroupKey;
+                });
+                const frameCount = hittingRows.length;
+                
+                const exitSpeeds = hittingRows.map(r => parseFloat(r.ExitSpeed)).filter(v => !isNaN(v));
+                const angles = hittingRows.map(r => parseFloat(r.Angle)).filter(v => !isNaN(v));
+                const validHitRows = hittingRows.filter(r => !isNaN(parseFloat(r.ExitSpeed)) && !isNaN(parseFloat(r.Angle)));
+                
+                const hitCount = validHitRows.length;
+
+                const peakEV = exitSpeeds.length > 0 ? Math.max(...exitSpeeds) : 0;
+                const sortedSpeeds = [...exitSpeeds].sort((a, b) => b - a);
+                const top50PercentCount = Math.ceil(sortedSpeeds.length / 2);
+                const top50Speeds = sortedSpeeds.slice(0, top50PercentCount);
+                let ev50 = 0;
+                if (top50Speeds.length > 0) ev50 = top50Speeds.reduce((a, b) => a + b, 0) / top50Speeds.length;
+                const idealAngleHits = angles.filter(a => a >= 0 && a <= 30).length;
+                const launchAnglePercent = angles.length > 0 ? (idealAngleHits / angles.length) * 100 : 0;
+                const hardHits = exitSpeeds.filter(s => s > 85).length;
+                const hardHitPercent = exitSpeeds.length > 0 ? (hardHits / exitSpeeds.length) * 100 : 0;
+                const barrelHits = validHitRows.filter(r => parseFloat(r.ExitSpeed) > 85 && parseFloat(r.Angle) >= 0 && parseFloat(r.Angle) <= 30).length;
+                const barrelPercent = validHitRows.length > 0 ? (barrelHits / validHitRows.length) * 100 : 0;
+                
+                const hitterBallScore = (peakEV / 85) * 20 + 
+                                        (ev50 / 85) * 20 + 
+                                        (launchAnglePercent) * 0.20 + 
+                                        (hardHitPercent) * 0.20 + 
+                                        (barrelPercent) * 0.20;
+
+                return {
+                    'Peak_Exit_Velocity': peakEV.toFixed(1),
+                    'EV_50': ev50.toFixed(1),
+                    'Launch_Angle_(0-30%)': `${launchAnglePercent.toFixed(1)}%`,
+                    'Hard_Hit_%': `${hardHitPercent.toFixed(1)}%`,
+                    'Barrel_%': `${barrelPercent.toFixed(1)}%`,
+                    'Hit_Count': hitCount,
+                    'Frame_Count': frameCount,
+                    'Hitter_Ball_Score': hitterBallScore.toFixed(1)
+                };
+            }
+
+            function getMovementScaleScore(pitchType, pitcherThrows, value, metric) {
+                const scales = {
+                    'InducedVertBreak': {
+                        'FourSeamFastBall': [
+                            { value: 15, score: 10 }, { value: 16, score: 20 }, { value: 17, score: 30 },
+                            { value: 18, score: 40 }, { value: 19, score: 50 }, { value: 20, score: 60 },
+                            { value: 21, score: 70 }, { value: 22, score: 80 }, { value: 23, score: 90 },
+                            { value: 24, score: 100 }
+                        ],
+                        'TwoSeamFastBall': [
+                            { value: 10, score: 10 }, { value: 9, score: 20 }, { value: 8, score: 30 },
+                            { value: 7, score: 40 }, { value: 6, score: 50 }, { value: 5, score: 60 },
+                            { value: 4, score: 70 }, { value: 3, score: 80 }, { value: 2, score: 90 },
+                            { value: 1, score: 100 }
+                        ]
+                    },
+                    'HorzBreak': {
+                        'Right': [
+                            { value: 14, score: 10 }, { value: 15, score: 20 }, { value: 16, score: 30 },
+                            { value: 17, score: 40 }, { value: 18, score: 50 }, { value: 19, score: 60 },
+                            { value: 20, score: 70 }, { value: 21, score: 80 }, { value: 22, score: 90 },
+                            { value: 23, score: 100 }
+                        ],
+                        'Left': [
+                            { value: -14, score: 10 }, { value: -15, score: 20 }, { value: -16, score: 30 },
+                            { value: -17, score: 40 }, { value: -18, score: 50 }, { value: -19, score: 60 },
+                            { value: -20, score: 70 }, { value: -21, score: 80 }, { value: -22, score: 90 },
+                            { value: -23, score: 100 }
+                        ]
+                    },
+                    'VertApprAngle': {
+                        'FourSeamFastBall': [
+                            { value: -6, score: 10 }, { value: -5.8, score: 20 }, { value: -5.6, score: 30 },
+                            { value: -5.4, score: 40 }, { value: -5.2, score: 50 }, { value: -5, score: 60 },
+                            { value: -4.8, score: 70 }, { value: -4.4, score: 80 }, { value: -4.2, score: 90 },
+                            { value: -4, score: 100 }
+                        ],
+                        'TwoSeamFastBall': [
+                            { value: -4, score: 10 }, { value: -4.2, score: 20 }, { value: -4.4, score: 30 },
+                            { value: -4.8, score: 40 }, { value: -5, score: 50 }, { value: -5.2, score: 60 },
+                            { value: -5.4, score: 70 }, { value: -5.6, score: 80 }, { value: -5.8, score: 90 },
+                            { value: -6, score: 100 }
+                        ]
+                    }
+                };
+
+                let scale;
+                if (metric === 'InducedVertBreak' || metric === 'VertApprAngle') {
+                    scale = scales[metric]?.[pitchType];
+                } else if (metric === 'HorzBreak') {
+                    scale = scales[metric]?.[pitcherThrows];
+                }
+                
+                if (!scale) return 0;
+                
+                const isReversed = (metric === 'InducedVertBreak' && pitchType === 'TwoSeamFastBall') || 
+                                   (metric === 'HorzBreak' && pitcherThrows === 'Left') ||
+                                   (metric === 'VertApprAngle' && pitchType === 'TwoSeamFastBall');
+                
+                let score = 0;
+                for (const step of scale) {
+                    if (isReversed) { 
+                        if (value <= step.value) {
+                            score = step.score;
+                        } else {
+                            break;
+                        }
+                    } else { 
+                        if (value >= step.value) {
+                            score = step.score;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                return score;
+            }
+
+            function calculatePitchingMetrics(rows, playerGroupKey) {
+                const actualPitchingRows = rows.filter(r => {
+                    if (!r.Pitcher || r.Pitcher.trim() === '') return false;
+                    const { lastName, firstName } = parsePlayerName(r.Pitcher);
+                    const pitcherKey = `${lastName.trim().toLowerCase()}|${firstName.trim().toLowerCase()}`;
+                    return pitcherKey === playerGroupKey;
+                });
+
+                const allFastballs = actualPitchingRows.filter(r => 
+                    r.TaggedPitchType === 'TwoSeamFastBall' || 
+                    r.TaggedPitchType === 'FourSeamFastBall'
+                );
+
+                const top16Fastballs = allFastballs
+                    .sort((a, b) => parseFloat(b.RelSpeed) - parseFloat(a.RelSpeed))
+                    .slice(0, 16);
+
+                const allMetrics = {};
+                const totalPitches = actualPitchingRows.length;
+
+                const pitchType = 'Fastball';
+                const pitchTypeRows = top16Fastballs;
+                
+                const count = pitchTypeRows.length;
+                allMetrics[`${pitchType}_Count`] = count;
+
+                if (count > 0) {
+                    const relSpeeds = pitchTypeRows.map(r => parseFloat(r.RelSpeed)).filter(v => !isNaN(v));
+                    const ivbs = pitchTypeRows.map(r => parseFloat(r.InducedVertBreak)).filter(v => !isNaN(v));
+                    const hbs = pitchTypeRows.map(r => parseFloat(r.HorzBreak)).filter(v => !isNaN(v));
+                    const spinRates = pitchTypeRows.map(r => parseFloat(r.SpinRate)).filter(v => !isNaN(v));
+                    const validStrikeZoneRows = pitchTypeRows.filter(r => !isNaN(parseFloat(r.PlateLocSide)) && !isNaN(parseFloat(r.PlateLocHeight)));
+                    
+                    const peakVelo = relSpeeds.length > 0 ? Math.max(...relSpeeds) : 0;
+                    allMetrics[`${pitchType}_Peak_Velocity`] = peakVelo.toFixed(1);
+                    
+                    let avgVelo = 0;
+                    if(relSpeeds.length > 0) avgVelo = relSpeeds.reduce((a, b) => a + b, 0) / relSpeeds.length;
+                    allMetrics[`${pitchType}_Average_Velocity`] = avgVelo.toFixed(1);
+                    
+                    let avgIVB = 0;
+                    if(ivbs.length > 0) avgIVB = ivbs.reduce((a, b) => a + b, 0) / ivbs.length;
+                    allMetrics[`${pitchType}_Average_IVB`] = avgIVB.toFixed(1);
+                    
+                    let avgHB = 0;
+                    if(hbs.length > 0) avgHB = hbs.reduce((a, b) => a + b, 0) / hbs.length;
+                    allMetrics[`${pitchType}_Average_HB`] = avgHB.toFixed(1);
+
+                    let avgSpin = 0;
+                    if(spinRates.length > 0) avgSpin = spinRates.reduce((a, b) => a + b, 0) / spinRates.length;
+                    allMetrics[`${pitchType}_Average_SpinRate`] = avgSpin.toFixed(1);
+                    
+                    const strikes = validStrikeZoneRows.filter(r => {
+                        const side = parseFloat(r.PlateLocSide);
+                        const height = parseFloat(r.PlateLocHeight);
+                        return side >= -0.708 && side <= 0.708 && height >= 1.5 && height <= 3.5;
+                    }).length;
+                    const strikePercent = validStrikeZoneRows.length > 0 ? (strikes / validStrikeZoneRows.length) * 100 : 0;
+                    allMetrics[`${pitchType}_Strike_%`] = `${strikePercent.toFixed(1)}%`;
+
+                    const top50PercentCount = Math.ceil(pitchTypeRows.length / 2);
+                    const top50Fastballs = pitchTypeRows.slice(0, top50PercentCount);
+                    
+                    if (top50Fastballs.length > 0) {
+                        const ivbScores = top50Fastballs.map(row => {
+                            const pitcherThrows = row.PitcherThrows;
+                            const pitchType = row.TaggedPitchType;
+                            const ivb = parseFloat(row.InducedVertBreak);
+                            if (isNaN(ivb)) return 0;
+                            return getMovementScaleScore(pitchType, pitcherThrows, ivb, 'InducedVertBreak');
+                        });
+                        const ivb50ScaleSum = ivbScores.reduce((a, b) => a + b, 0);
+                        allMetrics['Fastball_IVB50_Scale'] = (ivb50ScaleSum / ivbScores.length).toFixed(1);
+
+                        const hbScores = top50Fastballs.map(row => {
+                            const pitcherThrows = row.PitcherThrows;
+                            const pitchType = row.TaggedPitchType;
+                            const hb = parseFloat(row.HorzBreak);
+                            if (isNaN(hb)) return 0;
+                            return getMovementScaleScore(pitchType, pitcherThrows, hb, 'HorzBreak');
+                        });
+                        const hb50ScaleSum = hbScores.reduce((a, b) => a + b, 0);
+                        allMetrics['Fastball_HB50_Scale'] = (hb50ScaleSum / hbScores.length).toFixed(1);
+
+                        const vaaScores = top50Fastballs.map(row => {
+                            const pitcherThrows = row.PitcherThrows;
+                            const pitchType = row.TaggedPitchType;
+                            const vaa = parseFloat(row.VertApprAngle);
+                            if (isNaN(vaa)) return 0;
+                            return getMovementScaleScore(pitchType, pitcherThrows, vaa, 'VertApprAngle');
+                        });
+                        const vaa50ScaleSum = vaaScores.reduce((a, b) => a + b, 0);
+                        allMetrics['Fastball_VAA50_Scale'] = (vaa50ScaleSum / vaaScores.length).toFixed(1);
+
+                        const peakVeloScore = (peakVelo / 84) * 35;
+                        const avgVeloScore = (avgVelo / 84) * 30;
+                        const ivbScale = parseFloat(allMetrics['Fastball_IVB50_Scale']);
+                        const hbScale = parseFloat(allMetrics['Fastball_HB50_Scale']);
+                        const vaaScale = parseFloat(allMetrics['Fastball_VAA50_Scale']);
+                        const strikePctValue = parseFloat(allMetrics[`${pitchType}_Strike_%`].replace('%', ''));
+
+                        const pitcherBallScore = peakVeloScore + avgVeloScore + (ivbScale * 0.1) + (hbScale * 0.1) + (vaaScale * 0.05) + (strikePctValue * 0.10);
+                        allMetrics['Pitcher_Ball_Score'] = pitcherBallScore.toFixed(1);
+
+                    } else {
+                        allMetrics['Fastball_IVB50_Scale'] = '0.0';
+                        allMetrics['Fastball_HB50_Scale'] = '0.0';
+                        allMetrics['Fastball_VAA50_Scale'] = '0.0';
+                        allMetrics['Pitcher_Ball_Score'] = '0.0';
+                    }
+                }
+
+                allMetrics['Total_Pitches'] = totalPitches;
+                return allMetrics;
+            }
+
+            function createCSVString(data, headers) {
+                const csvRows = [headers.join(',')];
+                data.forEach(row => {
+                    const values = headers.map(header => {
+                        const keyWithUnderscore = header.replace(/ /g, '_');
+                        const keyWithSpace = header.replace(/_/g, ' ');
+                        let val = '';
+                        if (row[keyWithUnderscore] !== undefined) {
+                            val = row[keyWithUnderscore];
+                        } else if (row[keyWithSpace] !== undefined) {
+                            val = row[keyWithSpace];
+                        }
+                        
+                        const escaped = ('' + val).replace(/"/g, '""');
+                        return `"${escaped}"`;
+                    });
+                    csvRows.push(values.join(','));
+                });
+                return csvRows.join('\n');
+            }
+
+            function triggerDownload(blob, filename) {
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
+            
+            async function downloadZip(files, zipFilename) {
+                const zip = new JSZip();
+                files.forEach(file => {
+                    zip.file(file.name, file.content);
+                });
+                const blob = await zip.generateAsync({ type: 'blob' });
+                triggerDownload(blob, zipFilename);
+            }
+
+            function log(message, type = 'info') {
+                const colorClasses = {
+                    info: 'text-gray-700 bg-gray-100',
+                    success: 'text-green-700 bg-green-100',
+                    error: 'text-red-700 bg-red-100',
+                };
+                statusDiv.innerHTML = `<p class="${colorClasses[type]} p-3 rounded-md">${message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
