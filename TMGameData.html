@@ -267,6 +267,7 @@
                                             'Exit Velocity': formatValue(row['ExitSpeed']),
                                             'Launch Angle': formatValue(row['Angle']),
                                             'Distance': formatValue(row['Distance']),
+                                            'Direction': formatValue(row['Direction']),
                                             'Hit Type': formatValue(row['TaggedHitType']),
                                             'Result': formatValue(row['PlayResult']),
                                         };
@@ -352,7 +353,7 @@
                             doc.setFontSize(12);
                             doc.setFont('helvetica', 'normal');
                             if (gameDate) {
-                                doc.text(`Game Date: ${gameDate}`, 15, currentInfoY);
+                                doc.text(`Date: ${gameDate}`, 15, currentInfoY);
                             }
                             
                             doc.setFontSize(11);
@@ -472,7 +473,155 @@
                             doc.addPage();
                             doc.autoTable({ head, body, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
                         } else {
-                             doc.autoTable({ head, body, startY: 38, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
+                            // --- Batter PDF Generation ---
+                            const introText = "This dataset contains your live game hitting data recorded by TrackMan. It includes detailed information on each pitch tracked during game action, such as velocity, movement, spin, and location metrics. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your coach to maximize its value as a tool for growth.";
+                            const disclaimerText = "Please note: not every ball in play may appear in the dataset due to occasional interference or tracking limitations.";
+
+                            // --- Draw Header ---
+                            doc.setFontSize(11);
+                            doc.setFont('helvetica', 'normal');
+                            const introTextLines = doc.splitTextToSize(introText, 267);
+                            const introTextHeight = (introTextLines.length * 4) + 5; 
+                            let infoBoxContentHeight = 13; // Name
+                            if (gameDate) infoBoxContentHeight += 6;
+                            const boxHeight = infoBoxContentHeight + introTextHeight + 10; 
+
+                            doc.setFillColor(238, 242, 255); 
+                            doc.rect(10, 25, 277, boxHeight, 'F');
+
+                            doc.setTextColor(0, 0, 0);
+                            doc.setFontSize(22);
+                            doc.setFont('helvetica', 'bold');
+                            doc.text(cleanPlayerName, 15, 38);
+
+                            let currentInfoY = 38 + 8;
+                            doc.setFontSize(12);
+                            doc.setFont('helvetica', 'normal');
+                            if (gameDate) {
+                                doc.text(`Game Date: ${gameDate}`, 15, currentInfoY);
+                            }
+                            
+                            doc.setFontSize(11);
+                            doc.setFont('helvetica', 'normal');
+                            doc.text(introTextLines, 15, currentInfoY + 10);
+
+                            let currentY = 25 + boxHeight + 15;
+                            let currentX = 15;
+                            const chartHeight = 90;
+                            const chartWidth = (doc.internal.pageSize.getWidth() - 40) / 3;
+
+                            const hitData = tableData
+                                .map(row => ({
+                                    ev: parseFloat(row['Exit Velocity']),
+                                    la: parseFloat(row['Launch Angle']),
+                                    dist: parseFloat(row['Distance']),
+                                    dir: parseFloat(row['Direction'])
+                                }))
+                                .filter(d => !isNaN(d.ev) && !isNaN(d.la));
+
+                            if (hitData.length > 0) {
+                                // --- Chart Plugins ---
+                                const whiteBackgroundPlugin = {
+                                    id: 'customCanvasBackgroundColor',
+                                    beforeDraw: (chart) => {
+                                        const ctx = chart.canvas.getContext('2d');
+                                        ctx.save();
+                                        ctx.globalCompositeOperation = 'destination-over';
+                                        ctx.fillStyle = 'white';
+                                        ctx.fillRect(0, 0, chart.width, chart.height);
+                                        ctx.restore();
+                                    }
+                                };
+                                
+                                const sprayChartPlugin = {
+                                    id: 'sprayChartField',
+                                    beforeDraw: (chart) => {
+                                        const ctx = chart.ctx;
+                                        const {top, left, right, bottom} = chart.chartArea;
+                                        const x_center = (left + right) / 2;
+                                        const y_bottom = bottom;
+
+                                        ctx.save();
+                                        // Foul lines
+                                        ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+                                        ctx.lineWidth = 2;
+                                        ctx.beginPath();
+                                        ctx.moveTo(x_center, y_bottom);
+                                        ctx.lineTo(left, top);
+                                        ctx.moveTo(x_center, y_bottom);
+                                        ctx.lineTo(right, top);
+                                        ctx.stroke();
+                                        ctx.restore();
+                                    }
+                                };
+
+                                // --- Chart 1: Blast Chart (LA vs EV) ---
+                                const canvasBlast = document.createElement('canvas');
+                                canvasBlast.width = 450; canvasBlast.height = 400;
+                                new Chart(canvasBlast.getContext('2d'), {
+                                    type: 'scatter',
+                                    data: { datasets: [{ data: hitData.map(d => ({x: d.ev, y: d.la})), backgroundColor: '#38BDF8', pointRadius: 5 }] },
+                                    plugins: [whiteBackgroundPlugin],
+                                    options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Launch Angle vs. Exit Velocity' } }, scales: { x: { title: { display: true, text: 'Exit Velocity (mph)' } }, y: { title: { display: true, text: 'Launch Angle (°)' } } } }
+                                });
+                                doc.addImage(canvasBlast.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, chartHeight);
+                                currentX += chartWidth + 5;
+                                
+                                // --- Chart 2: Spray Chart ---
+                                const sprayData = hitData
+                                    .filter(d => !isNaN(d.dir) && !isNaN(d.dist))
+                                    .map(d => {
+                                        const angleRad = d.dir * Math.PI / 180;
+                                        return {
+                                            x: d.dist * Math.sin(angleRad),
+                                            y: d.dist * Math.cos(angleRad) * -1 // Invert Y-axis for correct orientation
+                                        };
+                                    });
+
+                                const canvasSpray = document.createElement('canvas');
+                                canvasSpray.width = 400; canvasSpray.height = 400;
+                                new Chart(canvasSpray.getContext('2d'), {
+                                    type: 'scatter',
+                                    data: { datasets: [{ data: sprayData, backgroundColor: '#38BDF8', pointRadius: 5 }] },
+                                    plugins: [whiteBackgroundPlugin, sprayChartPlugin],
+                                    options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Spray Chart' } }, scales: { x: { display: false, min: -350, max: 350 }, y: { display: false, min: -450, max: 50 } } }
+                                });
+                                doc.addImage(canvasSpray.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, chartHeight);
+                                currentX += chartWidth + 5;
+
+                                // --- Chart 3: Exit Velocity Distribution ---
+                                const evData = hitData.map(d => d.ev);
+                                const minVelo = Math.floor(Math.min(...evData) / 10) * 10;
+                                const maxVelo = Math.ceil(Math.max(...evData) / 10) * 10;
+                                const bins = {};
+                                for(let i = minVelo; i < maxVelo; i += 5) {
+                                    bins[`${i}-${i+5}`] = 0;
+                                }
+                                evData.forEach(velo => {
+                                    const bin = Math.floor(velo / 5) * 5;
+                                    const binName = `${bin}-${bin+5}`;
+                                    if (bins[binName] !== undefined) {
+                                        bins[binName]++;
+                                    }
+                                });
+
+                                const canvasHisto = document.createElement('canvas');
+                                canvasHisto.width = 450; canvasHisto.height = 400;
+                                new Chart(canvasHisto.getContext('2d'), {
+                                    type: 'bar',
+                                    data: { labels: Object.keys(bins), datasets: [{ data: Object.values(bins), backgroundColor: '#38BDF8' }] },
+                                    plugins: [whiteBackgroundPlugin],
+                                    options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Exit Velocity Distribution' } }, scales: { x: { title: { display: true, text: 'Exit Velocity (mph)' } }, y: { title: { display: true, text: 'Count' }, beginAtZero: true, ticks: { stepSize: 1 } } } }
+                                });
+                                doc.addImage(canvasHisto.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, chartHeight);
+                            }
+                            
+                            doc.setFontSize(8);
+                            doc.setTextColor(100, 100, 100);
+                            doc.text(disclaimerText, 15, doc.internal.pageSize.getHeight() - 10);
+                            
+                            doc.addPage();
+                            doc.autoTable({ head, body, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#38BDF8', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
                         }
 
                         const pdfBlob = doc.output('blob');
@@ -642,7 +791,5 @@
     </script>
 </body>
 </html>
-
-
 
 
