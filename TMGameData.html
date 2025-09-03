@@ -129,7 +129,7 @@
                     Speak directly to the player using "you" and "your" (e.g., "Your fastball averaged...").
                     Avoid subjective or judgmental words like "good," "bad," "solid," or "excellent."
                     Focus on objective analysis. Describe what the metrics indicate about the pitch's characteristics.
-                    Keep the insight to a concise paragraph (4 - 6 sentences).
+                    Present the analysis as a bulleted list of 3-5 key takeaways, starting each with a "*" character on a new line.
 
                     Player Name: ${playerName}
                     Data Summary:
@@ -139,7 +139,10 @@
                     - Average Induced Vertical Break: ${avgVert.toFixed(1)} inches
                     - Average Horizontal Break: ${avgHorz.toFixed(1)} inches
 
-                    Example of Factual Insight Style: "Your fastball averaged ${avgVelo.toFixed(1)} mph and reached a maximum of ${maxVelo.toFixed(1)} mph in this session. The average spin rate of ${avgSpin.toFixed(0)} rpm, combined with ${avgVert.toFixed(1)} inches of vertical break, indicates the pitch has [carry/sinking] characteristics. The ${avgHorz.toFixed(1)} inches of horizontal break gives the pitch [arm-side run / glove-side cut]."
+                    Example of Factual Insight Style:
+                    * Your fastball velocity averaged ${avgVelo.toFixed(1)} mph, with a peak of ${maxVelo.toFixed(1)} mph.
+                    * The spin rate averaged ${avgSpin.toFixed(0)} rpm, which, combined with ${avgVert.toFixed(1)}" of vertical break, suggests [carry/sinking] action.
+                    * The pitch exhibited an average of ${avgHorz.toFixed(1)}" of horizontal movement.
                 `;
 
                 try {
@@ -162,7 +165,7 @@
                 } catch (err) {
                     console.error("AI insight generation failed:", err);
                     // Fallback to a basic summary if the API fails
-                    return `Your fastballs average ${avgVelo.toFixed(1)} mph (topping out at ${maxVelo.toFixed(1)} mph) with an average spin rate of ${avgSpin.toFixed(0)} rpm. The pitch shows an average of ${avgVert.toFixed(1)}" of induced vertical break and ${avgHorz.toFixed(1)}" of horizontal break.`;
+                    return `* Your fastballs average ${avgVelo.toFixed(1)} mph (topping out at ${maxVelo.toFixed(1)} mph) with an average spin rate of ${avgSpin.toFixed(0)} rpm.\n* The pitch shows an average of ${avgVert.toFixed(1)}" of induced vertical break and ${avgHorz.toFixed(1)}" of horizontal break.`;
                 }
             };
 
@@ -214,8 +217,10 @@
                                 setProcessingStatus('Processing pitcher data...');
                                 const pitchers = {};
                                 results.data.forEach(row => {
-                                    const pitcherName = row['Pitcher'];
+                                    let pitcherName = row['Pitcher'];
                                     if (pitcherName) {
+                                        // Remove numbers and hash marks from the name
+                                        pitcherName = pitcherName.replace(/[#0-9]/g, '').trim();
                                         if (!pitchers[pitcherName]) {
                                             pitchers[pitcherName] = { data: [], gameDate: null };
                                         }
@@ -247,8 +252,10 @@
                                 setProcessingStatus('Processing batter data...');
                                 const batters = {};
                                 results.data.forEach(row => {
-                                    const batterName = row['Batter'];
+                                    let batterName = row['Batter'];
                                     if (batterName) {
+                                        // Remove numbers and hash marks from the name
+                                        batterName = batterName.replace(/[#0-9]/g, '').trim();
                                         if (!batters[batterName]) {
                                             batters[batterName] = { data: [], gameDate: null };
                                         }
@@ -302,10 +309,13 @@
                         const tableData = playerData.data;
                         const gameDate = playerData.gameDate;
 
+                        // Enhanced name parsing logic
+                        // The key is already cleaned in the handleProcess function.
+                        // This part just handles the "Last, First" to "First Last" conversion.
                         const nameParts = key.split(',').map(s => s.trim());
-                        const lastName = nameParts[0].replace(/\s*\d*$/, '').trim();
+                        const lastName = nameParts[0] || '';
                         const firstName = nameParts[1] || '';
-                        const cleanPlayerName = `${firstName} ${lastName}`;
+                        const cleanPlayerName = `${firstName} ${lastName}`.trim();
                         
                         setProcessingStatus(`Generating report for ${cleanPlayerName} (${i+1}/${playerNames.length})...`);
 
@@ -324,32 +334,6 @@
                             const introText = "This dataset contains your live game pitching data recorded by TrackMan. It includes detailed information on each pitch tracked during game action, such as velocity, movement, spin, and location metrics. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your pitching coach to maximize its value as a tool for growth.";
                             const disclaimerText = "Please note: not every pitch thrown in the game may appear in the dataset due to occasional interference or tracking limitations.";
                             
-                            const textLines = doc.splitTextToSize(introText, 267);
-                            const textHeight = (textLines.length * 5) + 40; // Increased buffer
-
-                            // Draw background box
-                            doc.setFillColor(238, 242, 255); // A light purple/indigo color
-                            doc.rect(10, 25, 277, textHeight, 'F'); // Adjusted position and height
-
-                            // Draw text on top
-                            doc.setTextColor(0, 0, 0);
-                            doc.setFontSize(22);
-                            doc.setFont('helvetica', 'bold');
-                            doc.text(cleanPlayerName, 15, startY);
-                            
-                            if (gameDate) {
-                                doc.setFontSize(12);
-                                doc.setFont('helvetica', 'normal');
-                                doc.text(`Game Date: ${gameDate}`, 15, startY + 8);
-                            }
-                            
-                            doc.setFontSize(11);
-                            doc.setFont('helvetica', 'normal');
-                            doc.text(textLines, 15, startY + 18);
-
-                            startY = 25 + textHeight + 10;
-
-                            // --- Create and add charts ---
                             const fastballData = tableData
                                 .filter(pitch => pitch['Pitch Type'] && pitch['Pitch Type'].toLowerCase().includes('fastball'))
                                 .map(pitch => ({
@@ -360,21 +344,81 @@
                                 }))
                                 .filter(point => !isNaN(point.x) && !isNaN(point.y) && !isNaN(point.horz) && !isNaN(point.vert));
 
+                            // --- Height Calculation Logic ---
+                            let insights = null;
+                            if (reportOptions.showInsights && fastballData.length > 0) {
+                                setProcessingStatus(`Generating insights for ${cleanPlayerName}...`);
+                                insights = await generatePlayerInsights(cleanPlayerName, fastballData);
+                            }
+
+                            // 1. Calculate height of the top info section
+                            let infoBoxContentHeight = 13; // Initial height for name
+                            if (gameDate) infoBoxContentHeight += 6;
+
+                            // 2. Calculate height of the intro paragraph
+                            doc.setFontSize(11);
+                            doc.setFont('helvetica', 'normal');
+                            const introTextLines = doc.splitTextToSize(introText, 267);
+                            const introTextHeight = (introTextLines.length * 4) + 5; 
+                            
+                            // 3. Calculate total box height for the blue background (lead-in text only)
+                            const boxHeight = infoBoxContentHeight + introTextHeight + 10; // 10px buffer
+
+                            // --- Drawing starts here ---
+
+                            // Draw background box with new calculated height
+                            doc.setFillColor(238, 242, 255); 
+                            doc.rect(10, 25, 277, boxHeight, 'F');
+
+                            // Draw player name and info
+                            doc.setTextColor(0, 0, 0);
+                            doc.setFontSize(22);
+                            doc.setFont('helvetica', 'bold');
+                            doc.text(cleanPlayerName, 15, startY); // startY is 38
+
+                            let currentInfoY = startY + 8;
+                            doc.setFontSize(12);
+                            doc.setFont('helvetica', 'normal');
+
+                            if (gameDate) {
+                                doc.text(`Game Date: ${gameDate}`, 15, currentInfoY);
+                            }
+                            
+                            // Draw intro text
+                            doc.setFontSize(11);
+                            doc.setFont('helvetica', 'normal');
+                            doc.text(introTextLines, 15, currentInfoY + 10);
+
+                            // Set Y coordinate for the lower section (charts and insights)
+                            let lowerSectionY = 25 + boxHeight + 15; // Start 15px below the blue box
+
+                            // --- Create and add insights and charts ---
                             if (fastballData.length > 0) {
                                 let currentX = 15;
                                 const chartHeight = 80;
-
-                                if (reportOptions.showInsights) {
-                                    setProcessingStatus(`Generating insights for ${cleanPlayerName}...`);
-                                    const insights = await generatePlayerInsights(cleanPlayerName, fastballData);
+                                
+                                if (insights) {
+                                    const textBlockYOffset = 5; // Added offset to move text down
                                     doc.setFontSize(12);
                                     doc.setFont('helvetica', 'bold');
-                                    // MODIFICATION: Changed "Player Insights" to "Fastball Characterization"
-                                    doc.text('Fastball Characterization', 15, startY);
+                                    doc.text('Fastball Characterization', 15, lowerSectionY + textBlockYOffset);
                                     doc.setFontSize(10);
                                     doc.setFont('helvetica', 'normal');
-                                    doc.text(doc.splitTextToSize(insights, 80), 15, startY + 8);
-                                    currentX += 85;
+                                    
+                                    let insightY = lowerSectionY + 8 + textBlockYOffset;
+                                    const bulletPoints = insights.split('\n').filter(line => line.trim().startsWith('*'));
+
+                                    bulletPoints.forEach(point => {
+                                        const cleanedPoint = point.trim().substring(1).trim();
+                                        const textLines = doc.splitTextToSize(cleanedPoint, 85);
+
+                                        if (textLines.length > 0 && textLines[0] !== '') {
+                                            doc.text('•', 15, insightY);
+                                            doc.text(textLines, 20, insightY);
+                                            insightY += (textLines.length * 4) + 2;
+                                        }
+                                    });
+                                    currentX += 95; // Allocate space for insights text
                                 }
                                 
                                 const chartsToRender = [
@@ -405,7 +449,7 @@
                                         plugins: [whiteBackgroundPlugin],
                                         options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Velocity vs. Spin Rate' } }, scales: { x: { title: { display: true, text: 'Velocity (mph)' } }, y: { title: { display: true, text: 'Spin Rate (rpm)' } } } }
                                     });
-                                    doc.addImage(canvasVelo.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, startY, dynamicChartWidth, chartHeight);
+                                    doc.addImage(canvasVelo.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, lowerSectionY, dynamicChartWidth, chartHeight);
                                     currentX += dynamicChartWidth + 5;
                                 }
 
@@ -418,7 +462,7 @@
                                         plugins: [whiteBackgroundPlugin, { id: 'heavyZeroAxes', afterDraw: (chart) => { const ctx = chart.ctx; const xAxis = chart.scales.x; const yAxis = chart.scales.y; ctx.save(); ctx.strokeStyle = '#6B7280'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xAxis.left, yAxis.getPixelForValue(0)); ctx.lineTo(xAxis.right, yAxis.getPixelForValue(0)); ctx.stroke(); ctx.beginPath(); ctx.moveTo(xAxis.getPixelForValue(0), yAxis.top); ctx.lineTo(xAxis.getPixelForValue(0), yAxis.bottom); ctx.stroke(); ctx.restore(); } }],
                                         options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Movement Profile' } }, scales: { x: { title: { display: true, text: 'Horizontal Break (in)' }, min: -25, max: 25 }, y: { title: { display: true, text: 'Induced Vertical Break (in)' }, min: -25, max: 25 } } }
                                     });
-                                    doc.addImage(canvasMove.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, startY, dynamicChartWidth, chartHeight);
+                                    doc.addImage(canvasMove.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, lowerSectionY, dynamicChartWidth, chartHeight);
                                 }
                             }
                             
@@ -508,7 +552,6 @@
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                                             <label className="flex items-center space-x-2 cursor-pointer">
                                                 <input type="checkbox" checked={reportOptions.showInsights} onChange={(e) => setReportOptions({...reportOptions, showInsights: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                                {/* MODIFICATION: Changed "Insights" to "Fastball Characterization" */}
                                                 <span className="text-sm text-slate-700">Fastball Characterization</span>
                                             </label>
                                             <label className="flex items-center space-x-2 cursor-pointer">
@@ -549,46 +592,46 @@
                         {/* Step 3: Download Results */}
                         {(pitcherFiles || batterFiles) && (
                              <div className="space-y-6 pt-4 border-t border-slate-200">
-                                <h2 className="text-lg font-semibold text-slate-700">Step 3: Download Your Files</h2>
-                                { isLoading && <p className="text-center text-slate-500">{processingStatus}</p> }
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Pitcher Download Section */}
-                                    {pitcherFiles && Object.keys(pitcherFiles).length > 0 && (
-                                        <div className="bg-slate-50 p-4 rounded-lg space-y-3">
-                                            <div className="flex items-center text-slate-800">
-                                                <UserIcon className="w-6 h-6 mr-2 text-indigo-500"/>
-                                                <h3 className="font-semibold">Pitcher Files ({Object.keys(pitcherFiles).length})</h3>
-                                            </div>
-                                            <button
-                                                onClick={() => handleDownload(pitcherFiles, 'pitchers.zip')}
-                                                disabled={isLoading || !libsLoaded}
-                                                className="w-full flex items-center justify-center p-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 disabled:bg-slate-400 transition-colors"
-                                            >
-                                                <DownloadIcon className="w-5 h-5 mr-2" />
-                                                Download Pitchers.zip
-                                            </button>
-                                        </div>
-                                    )}
+                                 <h2 className="text-lg font-semibold text-slate-700">Step 3: Download Your Files</h2>
+                                 { isLoading && <p className="text-center text-slate-500">{processingStatus}</p> }
+                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                     {/* Pitcher Download Section */}
+                                     {pitcherFiles && Object.keys(pitcherFiles).length > 0 && (
+                                         <div className="bg-slate-50 p-4 rounded-lg space-y-3">
+                                             <div className="flex items-center text-slate-800">
+                                                 <UserIcon className="w-6 h-6 mr-2 text-indigo-500"/>
+                                                 <h3 className="font-semibold">Pitcher Files ({Object.keys(pitcherFiles).length})</h3>
+                                             </div>
+                                             <button
+                                                 onClick={() => handleDownload(pitcherFiles, 'pitchers.zip')}
+                                                 disabled={isLoading || !libsLoaded}
+                                                 className="w-full flex items-center justify-center p-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 disabled:bg-slate-400 transition-colors"
+                                             >
+                                                 <DownloadIcon className="w-5 h-5 mr-2" />
+                                                 Download Pitchers.zip
+                                             </button>
+                                         </div>
+                                     )}
 
-                                    {/* Batter Download Section */}
-                                    {batterFiles && Object.keys(batterFiles).length > 0 && (
-                                        <div className="bg-slate-50 p-4 rounded-lg space-y-3">
-                                            <div className="flex items-center text-slate-800">
-                                                <UsersIcon className="w-6 h-6 mr-2 text-sky-500"/>
-                                                <h3 className="font-semibold">Batter Files ({Object.keys(batterFiles).length})</h3>
-                                            </div>
-                                            <button
-                                                onClick={() => handleDownload(batterFiles, 'batters.zip')}
-                                                disabled={isLoading || !libsLoaded}
-                                                className="w-full flex items-center justify-center p-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 disabled:bg-slate-400 transition-colors"
-                                            >
-                                                <DownloadIcon className="w-5 h-5 mr-2" />
-                                                Download Batters.zip
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+                                     {/* Batter Download Section */}
+                                     {batterFiles && Object.keys(batterFiles).length > 0 && (
+                                         <div className="bg-slate-50 p-4 rounded-lg space-y-3">
+                                             <div className="flex items-center text-slate-800">
+                                                 <UsersIcon className="w-6 h-6 mr-2 text-sky-500"/>
+                                                 <h3 className="font-semibold">Batter Files ({Object.keys(batterFiles).length})</h3>
+                                             </div>
+                                             <button
+                                                 onClick={() => handleDownload(batterFiles, 'batters.zip')}
+                                                 disabled={isLoading || !libsLoaded}
+                                                 className="w-full flex items-center justify-center p-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 disabled:bg-slate-400 transition-colors"
+                                             >
+                                                 <DownloadIcon className="w-5 h-5 mr-2" />
+                                                 Download Batters.zip
+                                             </button>
+                                         </div>
+                                     )}
+                                 </div>
+                             </div>
                         )}
                     </div>
                 </div>
@@ -601,3 +644,8 @@
     </script>
 </body>
 </html>
+
+
+
+
+
