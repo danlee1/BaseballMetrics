@@ -111,37 +111,38 @@
                 return value;
             };
             
-            // Function to generate AI-powered insights
-            const generatePlayerInsights = async (playerName, fastballData) => {
-                if (fastballData.length === 0) {
-                    return "Not enough fastball data to generate insights.";
+            // Function to generate AI-powered insights for a given pitch type
+            const generatePlayerInsights = async (playerName, pitchData, pitchType) => {
+                if (pitchData.length === 0) {
+                    return `Not enough ${pitchType} data to generate insights.`;
                 }
 
-                const avgVelo = fastballData.reduce((a, b) => a + b.x, 0) / fastballData.length;
-                const maxVelo = Math.max(...fastballData.map(p => p.x));
-                const avgSpin = fastballData.reduce((a, b) => a + b.y, 0) / fastballData.length;
-                const avgHorz = fastballData.reduce((a, b) => a + b.horz, 0) / fastballData.length;
-                const avgVert = fastballData.reduce((a, b) => a + b.vert, 0) / fastballData.length;
+                const avgVelo = pitchData.reduce((a, b) => a + b.x, 0) / pitchData.length;
+                const maxVelo = Math.max(...pitchData.map(p => p.x));
+                const avgSpin = pitchData.reduce((a, b) => a + b.y, 0) / pitchData.length;
+                const avgHorz = pitchData.reduce((a, b) => a + b.horz, 0) / pitchData.length;
+                const avgVert = pitchData.reduce((a, b) => a + b.vert, 0) / pitchData.length;
 
                 const prompt = `
-                    Analyze the following baseball pitcher's fastball data and provide a personalized, factual summary directly to the player, ${playerName}.
+                    Analyze the following baseball pitcher's ${pitchType} data and provide a personalized, factual summary directly to the player, ${playerName}.
                     Adopt the persona of a professional baseball data analyst.
-                    Speak directly to the player using "you" and "your" (e.g., "Your fastball averaged...").
+                    Speak directly to the player using "you" and "your" (e.g., "Your ${pitchType} averaged...").
                     Avoid subjective or judgmental words like "good," "bad," "solid," or "excellent."
                     Focus on objective analysis. Describe what the metrics indicate about the pitch's characteristics.
                     Present the analysis as a bulleted list of 3-5 key takeaways, starting each with a "*" character on a new line.
 
                     Player Name: ${playerName}
+                    Pitch Type: ${pitchType}
                     Data Summary:
-                    - Average Fastball Velocity: ${avgVelo.toFixed(1)} mph
-                    - Max Fastball Velocity: ${maxVelo.toFixed(1)} mph
+                    - Average Velocity: ${avgVelo.toFixed(1)} mph
+                    - Max Velocity: ${maxVelo.toFixed(1)} mph
                     - Average Spin Rate: ${avgSpin.toFixed(0)} rpm
                     - Average Induced Vertical Break: ${avgVert.toFixed(1)} inches
                     - Average Horizontal Break: ${avgHorz.toFixed(1)} inches
 
                     Example of Factual Insight Style:
-                    * Your fastball velocity averaged ${avgVelo.toFixed(1)} mph, with a peak of ${maxVelo.toFixed(1)} mph.
-                    * The spin rate averaged ${avgSpin.toFixed(0)} rpm, which, combined with ${avgVert.toFixed(1)}" of vertical break, suggests [carry/sinking] action.
+                    * Your ${pitchType} velocity averaged ${avgVelo.toFixed(1)} mph, with a peak of ${maxVelo.toFixed(1)} mph.
+                    * The spin rate averaged ${avgSpin.toFixed(0)} rpm, which, combined with ${avgVert.toFixed(1)}" of vertical break, suggests [carry/sinking/sweeping] action.
                     * The pitch exhibited an average of ${avgHorz.toFixed(1)}" of horizontal movement.
                 `;
 
@@ -165,7 +166,7 @@
                 } catch (err) {
                     console.error("AI insight generation failed:", err);
                     // Fallback to a basic summary if the API fails
-                    return `* Your fastballs average ${avgVelo.toFixed(1)} mph (topping out at ${maxVelo.toFixed(1)} mph) with an average spin rate of ${avgSpin.toFixed(0)} rpm.\n* The pitch shows an average of ${avgVert.toFixed(1)}" of induced vertical break and ${avgHorz.toFixed(1)}" of horizontal break.`;
+                    return `* Your ${pitchType}s average ${avgVelo.toFixed(1)} mph (topping out at ${maxVelo.toFixed(1)} mph) with an average spin rate of ${avgSpin.toFixed(0)} rpm.\n* The pitch shows an average of ${avgVert.toFixed(1)}" of induced vertical break and ${avgHorz.toFixed(1)}" of horizontal break.`;
                 }
             };
 
@@ -309,9 +310,6 @@
                         const tableData = playerData.data;
                         const gameDate = playerData.gameDate;
 
-                        // Enhanced name parsing logic
-                        // The key is already cleaned in the handleProcess function.
-                        // This part just handles the "Last, First" to "First Last" conversion.
                         const nameParts = key.split(',').map(s => s.trim());
                         const lastName = nameParts[0] || '';
                         const firstName = nameParts[1] || '';
@@ -326,7 +324,6 @@
                             doc.addImage(logoBase64, 'PNG', 15, 10, 50, 0);
                         }
 
-                        let startY = 38;
                         const head = [Object.keys(tableData[0])];
                         const body = tableData.map(row => Object.values(row));
 
@@ -334,78 +331,78 @@
                             const introText = "This dataset contains your live game pitching data recorded by TrackMan. It includes detailed information on each pitch tracked during game action, such as velocity, movement, spin, and location metrics. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your pitching coach to maximize its value as a tool for growth.";
                             const disclaimerText = "Please note: not every pitch thrown in the game may appear in the dataset due to occasional interference or tracking limitations.";
                             
-                            const fastballData = tableData
-                                .filter(pitch => pitch['Pitch Type'] && pitch['Pitch Type'].toLowerCase().includes('fastball'))
-                                .map(pitch => ({
-                                    x: parseFloat(pitch['Pitch Velocity']),
-                                    y: parseFloat(pitch['Spin Rate']),
-                                    horz: parseFloat(pitch['Horizontal Break']),
-                                    vert: parseFloat(pitch['Induced Vertical Break'])
-                                }))
-                                .filter(point => !isNaN(point.x) && !isNaN(point.y) && !isNaN(point.horz) && !isNaN(point.vert));
-
-                            // --- Height Calculation Logic ---
-                            let insights = null;
-                            if (reportOptions.showInsights && fastballData.length > 0) {
-                                setProcessingStatus(`Generating insights for ${cleanPlayerName}...`);
-                                insights = await generatePlayerInsights(cleanPlayerName, fastballData);
-                            }
-
-                            // 1. Calculate height of the top info section
-                            let infoBoxContentHeight = 13; // Initial height for name
-                            if (gameDate) infoBoxContentHeight += 6;
-
-                            // 2. Calculate height of the intro paragraph
+                             // --- Draw the initial page header ONCE per player ---
                             doc.setFontSize(11);
                             doc.setFont('helvetica', 'normal');
                             const introTextLines = doc.splitTextToSize(introText, 267);
                             const introTextHeight = (introTextLines.length * 4) + 5; 
-                            
-                            // 3. Calculate total box height for the blue background (lead-in text only)
-                            const boxHeight = infoBoxContentHeight + introTextHeight + 10; // 10px buffer
+                            let infoBoxContentHeight = 13; // Initial height for name
+                            if (gameDate) infoBoxContentHeight += 6;
+                            const boxHeight = infoBoxContentHeight + introTextHeight + 10; 
 
-                            // --- Drawing starts here ---
-
-                            // Draw background box with new calculated height
                             doc.setFillColor(238, 242, 255); 
                             doc.rect(10, 25, 277, boxHeight, 'F');
 
-                            // Draw player name and info
                             doc.setTextColor(0, 0, 0);
                             doc.setFontSize(22);
                             doc.setFont('helvetica', 'bold');
-                            doc.text(cleanPlayerName, 15, startY); // startY is 38
+                            doc.text(cleanPlayerName, 15, 38);
 
-                            let currentInfoY = startY + 8;
+                            let currentInfoY = 38 + 8;
                             doc.setFontSize(12);
                             doc.setFont('helvetica', 'normal');
-
                             if (gameDate) {
                                 doc.text(`Game Date: ${gameDate}`, 15, currentInfoY);
                             }
                             
-                            // Draw intro text
                             doc.setFontSize(11);
                             doc.setFont('helvetica', 'normal');
                             doc.text(introTextLines, 15, currentInfoY + 10);
 
-                            // Set Y coordinate for the lower section (charts and insights)
-                            let lowerSectionY = 25 + boxHeight + 15; // Start 15px below the blue box
+                            // --- Get all unique pitch types for this player ---
+                            const pitchTypes = [...new Set(tableData.map(p => p['Pitch Type']))].filter(Boolean);
 
-                            // --- Create and add insights and charts ---
-                            if (fastballData.length > 0) {
+                            let isFirstPitchType = true;
+                            let currentY = 25 + boxHeight + 15;
+
+                            // --- Loop through each pitch type and generate its section ---
+                            for (const pitchType of pitchTypes) {
+                                const pitchData = tableData
+                                    .filter(pitch => pitch['Pitch Type'] === pitchType)
+                                    .map(pitch => ({
+                                        x: parseFloat(pitch['Pitch Velocity']),
+                                        y: parseFloat(pitch['Spin Rate']),
+                                        horz: parseFloat(pitch['Horizontal Break']),
+                                        vert: parseFloat(pitch['Induced Vertical Break'])
+                                    }))
+                                    .filter(point => !isNaN(point.x) && !isNaN(point.y) && !isNaN(point.horz) && !isNaN(point.vert));
+
+                                if (pitchData.length < 2) continue;
+                                
+                                // Only add a new page if it's not the first valid pitch type being displayed
+                                if (!isFirstPitchType) {
+                                    doc.addPage();
+                                    currentY = 25; // Reset Y for new pages
+                                }
+
+                                let insights = null;
+                                if (reportOptions.showInsights) {
+                                    setProcessingStatus(`Generating insights for ${cleanPlayerName}'s ${pitchType}...`);
+                                    insights = await generatePlayerInsights(cleanPlayerName, pitchData, pitchType);
+                                }
+
                                 let currentX = 15;
                                 const chartHeight = 80;
+                                const textBlockYOffset = 4; // Vertical offset for text block
                                 
                                 if (insights) {
-                                    const textBlockYOffset = 5; // Added offset to move text down
                                     doc.setFontSize(12);
                                     doc.setFont('helvetica', 'bold');
-                                    doc.text('Fastball Characterization', 15, lowerSectionY + textBlockYOffset);
+                                    doc.text(`${pitchType} Characterization`, 15, currentY + textBlockYOffset);
                                     doc.setFontSize(10);
                                     doc.setFont('helvetica', 'normal');
                                     
-                                    let insightY = lowerSectionY + 8 + textBlockYOffset;
+                                    let insightY = currentY + 8 + textBlockYOffset;
                                     const bulletPoints = insights.split('\n').filter(line => line.trim().startsWith('*'));
 
                                     bulletPoints.forEach(point => {
@@ -418,7 +415,7 @@
                                             insightY += (textLines.length * 4) + 2;
                                         }
                                     });
-                                    currentX += 95; // Allocate space for insights text
+                                    currentX += 95;
                                 }
                                 
                                 const chartsToRender = [
@@ -445,11 +442,11 @@
                                     canvasVelo.width = 400; canvasVelo.height = 350;
                                     new Chart(canvasVelo.getContext('2d'), {
                                         type: 'scatter',
-                                        data: { datasets: [{ data: fastballData.map(p => ({x: p.x, y: p.y})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
+                                        data: { datasets: [{ data: pitchData.map(p => ({x: p.x, y: p.y})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
                                         plugins: [whiteBackgroundPlugin],
-                                        options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Velocity vs. Spin Rate' } }, scales: { x: { title: { display: true, text: 'Velocity (mph)' } }, y: { title: { display: true, text: 'Spin Rate (rpm)' } } } }
+                                        options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: `${pitchType} Velocity vs. Spin Rate` } }, scales: { x: { title: { display: true, text: 'Velocity (mph)' } }, y: { title: { display: true, text: 'Spin Rate (rpm)' } } } }
                                     });
-                                    doc.addImage(canvasVelo.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, lowerSectionY, dynamicChartWidth, chartHeight);
+                                    doc.addImage(canvasVelo.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, dynamicChartWidth, chartHeight);
                                     currentX += dynamicChartWidth + 5;
                                 }
 
@@ -458,23 +455,24 @@
                                     canvasMove.width = 400; canvasMove.height = 350;
                                     new Chart(canvasMove.getContext('2d'), {
                                         type: 'scatter',
-                                        data: { datasets: [{ data: fastballData.map(p => ({x: p.horz, y: p.vert})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
+                                        data: { datasets: [{ data: pitchData.map(p => ({x: p.horz, y: p.vert})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
                                         plugins: [whiteBackgroundPlugin, { id: 'heavyZeroAxes', afterDraw: (chart) => { const ctx = chart.ctx; const xAxis = chart.scales.x; const yAxis = chart.scales.y; ctx.save(); ctx.strokeStyle = '#6B7280'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xAxis.left, yAxis.getPixelForValue(0)); ctx.lineTo(xAxis.right, yAxis.getPixelForValue(0)); ctx.stroke(); ctx.beginPath(); ctx.moveTo(xAxis.getPixelForValue(0), yAxis.top); ctx.lineTo(xAxis.getPixelForValue(0), yAxis.bottom); ctx.stroke(); ctx.restore(); } }],
-                                        options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Fastball Movement Profile' } }, scales: { x: { title: { display: true, text: 'Horizontal Break (in)' }, min: -25, max: 25 }, y: { title: { display: true, text: 'Induced Vertical Break (in)' }, min: -25, max: 25 } } }
+                                        options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: `${pitchType} Movement Profile` } }, scales: { x: { title: { display: true, text: 'Horizontal Break (in)' }, min: -25, max: 25 }, y: { title: { display: true, text: 'Induced Vertical Break (in)' }, min: -25, max: 25 } } }
                                     });
-                                    doc.addImage(canvasMove.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, lowerSectionY, dynamicChartWidth, chartHeight);
+                                    doc.addImage(canvasMove.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, dynamicChartWidth, chartHeight);
                                 }
+
+                                doc.setFontSize(8);
+                                doc.setTextColor(100, 100, 100);
+                                doc.text(disclaimerText, 15, doc.internal.pageSize.getHeight() - 10);
+                                
+                                isFirstPitchType = false;
                             }
-                            
-                            // Add disclaimer at the bottom of the first page
-                            doc.setFontSize(8);
-                            doc.setTextColor(100, 100, 100); // Gray color
-                            doc.text(disclaimerText, 15, doc.internal.pageSize.getHeight() - 10);
                             
                             doc.addPage();
                             doc.autoTable({ head, body, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
                         } else {
-                             doc.autoTable({ head, body, startY, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
+                             doc.autoTable({ head, body, startY: 38, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
                         }
 
                         const pdfBlob = doc.output('blob');
@@ -552,7 +550,7 @@
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                                             <label className="flex items-center space-x-2 cursor-pointer">
                                                 <input type="checkbox" checked={reportOptions.showInsights} onChange={(e) => setReportOptions({...reportOptions, showInsights: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                                <span className="text-sm text-slate-700">Fastball Characterization</span>
+                                                <span className="text-sm text-slate-700">Pitch Characterization</span>
                                             </label>
                                             <label className="flex items-center space-x-2 cursor-pointer">
                                                 <input type="checkbox" checked={reportOptions.showVeloSpinChart} onChange={(e) => setReportOptions({...reportOptions, showVeloSpinChart: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
@@ -644,7 +642,6 @@
     </script>
 </body>
 </html>
-
 
 
 
