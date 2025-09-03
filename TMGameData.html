@@ -393,7 +393,6 @@
                                 }
 
                                 let currentX = 15;
-                                const chartHeight = 80;
                                 const textBlockYOffset = 4; // Vertical offset for text block
                                 
                                 if (insights) {
@@ -425,6 +424,8 @@
                                 ].filter(Boolean);
 
                                 const dynamicChartWidth = chartsToRender.length > 0 ? (282 - currentX) / chartsToRender.length : 0;
+                                const pitcherCanvasAspectRatio = 400 / 350;
+                                const dynamicChartHeight = dynamicChartWidth / pitcherCanvasAspectRatio;
 
                                 const whiteBackgroundPlugin = {
                                     id: 'customCanvasBackgroundColor',
@@ -447,7 +448,7 @@
                                         plugins: [whiteBackgroundPlugin],
                                         options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: `${pitchType} Velocity vs. Spin Rate` } }, scales: { x: { title: { display: true, text: 'Velocity (mph)' } }, y: { title: { display: true, text: 'Spin Rate (rpm)' } } } }
                                     });
-                                    doc.addImage(canvasVelo.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, dynamicChartWidth, chartHeight);
+                                    doc.addImage(canvasVelo.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, dynamicChartWidth, dynamicChartHeight);
                                     currentX += dynamicChartWidth + 5;
                                 }
 
@@ -460,7 +461,7 @@
                                         plugins: [whiteBackgroundPlugin, { id: 'heavyZeroAxes', afterDraw: (chart) => { const ctx = chart.ctx; const xAxis = chart.scales.x; const yAxis = chart.scales.y; ctx.save(); ctx.strokeStyle = '#6B7280'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xAxis.left, yAxis.getPixelForValue(0)); ctx.lineTo(xAxis.right, yAxis.getPixelForValue(0)); ctx.stroke(); ctx.beginPath(); ctx.moveTo(xAxis.getPixelForValue(0), yAxis.top); ctx.lineTo(xAxis.getPixelForValue(0), yAxis.bottom); ctx.stroke(); ctx.restore(); } }],
                                         options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: `${pitchType} Movement Profile` } }, scales: { x: { title: { display: true, text: 'Horizontal Break (in)' }, min: -25, max: 25 }, y: { title: { display: true, text: 'Induced Vertical Break (in)' }, min: -25, max: 25 } } }
                                     });
-                                    doc.addImage(canvasMove.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, dynamicChartWidth, chartHeight);
+                                    doc.addImage(canvasMove.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, dynamicChartWidth, dynamicChartHeight);
                                 }
 
                                 doc.setFontSize(8);
@@ -474,7 +475,7 @@
                             doc.autoTable({ head, body, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
                         } else {
                             // --- Batter PDF Generation ---
-                            const introText = "This dataset contains your live game hitting data recorded by TrackMan. It includes detailed information on each pitch tracked during game action, such as velocity, movement, spin, and location metrics. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your coach to maximize its value as a tool for growth.";
+                            const introText = "This dataset contains your live game hitting data recorded by TrackMan. It includes detailed information on each ball you put in play, such as exit velocity, launch angle, and distance. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your coach to maximize its value as a tool for growth.";
                             const disclaimerText = "Please note: not every ball in play may appear in the dataset due to occasional interference or tracking limitations.";
 
                             // --- Draw Header ---
@@ -507,8 +508,10 @@
 
                             let currentY = 25 + boxHeight + 15;
                             let currentX = 15;
-                            const chartHeight = 90;
                             const chartWidth = (doc.internal.pageSize.getWidth() - 40) / 3;
+                            const batterBlastHistoAspectRatio = 450 / 400;
+                            const batterChartHeight = chartWidth / batterBlastHistoAspectRatio;
+                            const sprayChartHeight = chartWidth; // For 1:1 spray chart
 
                             const hitData = tableData
                                 .map(row => ({
@@ -564,7 +567,7 @@
                                     plugins: [whiteBackgroundPlugin],
                                     options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Launch Angle vs. Exit Velocity' } }, scales: { x: { title: { display: true, text: 'Exit Velocity (mph)' } }, y: { title: { display: true, text: 'Launch Angle (°)' } } } }
                                 });
-                                doc.addImage(canvasBlast.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, chartHeight);
+                                doc.addImage(canvasBlast.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, batterChartHeight);
                                 currentX += chartWidth + 5;
                                 
                                 // --- Chart 2: Spray Chart ---
@@ -586,7 +589,7 @@
                                     plugins: [whiteBackgroundPlugin, sprayChartPlugin],
                                     options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Spray Chart' } }, scales: { x: { display: false, min: -350, max: 350 }, y: { display: false, min: -450, max: 50 } } }
                                 });
-                                doc.addImage(canvasSpray.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, chartHeight);
+                                doc.addImage(canvasSpray.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, sprayChartHeight);
                                 currentX += chartWidth + 5;
 
                                 // --- Chart 3: Exit Velocity Distribution ---
@@ -613,7 +616,7 @@
                                     plugins: [whiteBackgroundPlugin],
                                     options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Exit Velocity Distribution' } }, scales: { x: { title: { display: true, text: 'Exit Velocity (mph)' } }, y: { title: { display: true, text: 'Count' }, beginAtZero: true, ticks: { stepSize: 1 } } } }
                                 });
-                                doc.addImage(canvasHisto.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, chartHeight);
+                                doc.addImage(canvasHisto.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, batterChartHeight);
                             }
                             
                             doc.setFontSize(8);
@@ -791,5 +794,7 @@
     </script>
 </body>
 </html>
+
+
 
 
