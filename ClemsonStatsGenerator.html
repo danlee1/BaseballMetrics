@@ -700,11 +700,25 @@
                 const hitCount = validHitRows.length;
 
                 const peakEV = exitSpeeds.length > 0 ? Math.max(...exitSpeeds) : 0;
-                const sortedSpeeds = [...exitSpeeds].sort((a, b) => b - a);
-                const top50PercentCount = Math.ceil(sortedSpeeds.length / 2);
-                const top50Speeds = sortedSpeeds.slice(0, top50PercentCount);
+                
+                // MODIFICATION START: New EV50 Calculation Logic
+                const allSortedSpeeds = [...exitSpeeds].sort((a, b) => b - a);
+                const top24Speeds = allSortedSpeeds.slice(0, 24);
+                let calculationSpeeds = top24Speeds.slice(0, 12);
+                
+                const zerosToAdd = 12 - calculationSpeeds.length;
+                if (zerosToAdd > 0) {
+                    for (let i = 0; i < zerosToAdd; i++) {
+                        calculationSpeeds.push(0);
+                    }
+                }
+
                 let ev50 = 0;
-                if (top50Speeds.length > 0) ev50 = top50Speeds.reduce((a, b) => a + b, 0) / top50Speeds.length;
+                if (calculationSpeeds.length > 0) {
+                    ev50 = calculationSpeeds.reduce((a, b) => a + b, 0) / calculationSpeeds.length;
+                }
+                // MODIFICATION END
+
                 const idealAngleHits = angles.filter(a => a >= 0 && a <= 30).length;
                 const launchAnglePercent = angles.length > 0 ? (idealAngleHits / angles.length) * 100 : 0;
                 const hardHits = exitSpeeds.filter(s => s > 85).length;
