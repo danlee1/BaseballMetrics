@@ -29,7 +29,7 @@
         // Color Constant for #A6FF00 (Neon Green)
         const HIGHLIGHT_HEX = '#A6FF00';
         const HIGHLIGHT_RGB = [166, 255, 0];
-        const PDF_FONT = 'helvetica'; // Reverted to standard PDF font
+        const PDF_FONT = 'helvetica';
 
         // --- SVG Icons ---
         const Icon = ({ className, children }) => (
@@ -281,6 +281,17 @@ Metrics:
                     const { jsPDF } = window.jspdf;
                     const players = Object.keys(filesToZip);
 
+                    // Border Drawing Helper: 10px approx 3.5mm
+                    const drawPageBorder = (doc) => {
+                        const width = doc.internal.pageSize.getWidth();
+                        const height = doc.internal.pageSize.getHeight();
+                        const lineWidth = 3.5; 
+                        doc.setLineWidth(lineWidth);
+                        doc.setDrawColor(...HIGHLIGHT_RGB);
+                        // Stroke the rectangle relative to center of line thickness
+                        doc.rect(lineWidth / 2, lineWidth / 2, width - lineWidth, height - lineWidth, 'S');
+                    };
+
                     for (let i = 0; i < players.length; i++) {
                         const key = players[i];
                         const playerData = filesToZip[key];
@@ -301,6 +312,8 @@ Metrics:
 
                         const doc = new jsPDF({ orientation: 'landscape' });
                         doc.setFont(PDF_FONT, 'normal');
+                        drawPageBorder(doc); // Page 1 Border
+
                         if (logoBase64) doc.addImage(logoBase64, 'PNG', 15, 10, 50, 0);
 
                         let currentTopY = 48; 
@@ -388,17 +401,26 @@ Metrics:
                             const others = Object.keys(arsenal).filter(k => !k.toLowerCase().includes('fastball'));
                             for (const type of others) {
                                 const pts = arsenal[type].filter(pt => !isNaN(pt.x));
-                                if (pts.length >= 3) { doc.addPage(); await renderPitchPage(type, pts, true); }
+                                if (pts.length >= 3) { 
+                                    doc.addPage(); 
+                                    drawPageBorder(doc); // Subpage Border
+                                    await renderPitchPage(type, pts, true); 
+                                }
                             }
 
                             doc.addPage();
+                            drawPageBorder(doc); // Table Page Border
                             const head = [Object.keys(tableData[0]).filter(k => k !== 'originalTagged' && k !== 'baseType')];
                             const body = tableData.map(row => Object.keys(row).filter(k => k !== 'originalTagged' && k !== 'baseType').map(k => row[k]));
                             
                             doc.autoTable({ 
                                 head, body, 
                                 styles: { fontSize: 8, font: PDF_FONT },
-                                headStyles: { fillColor: HIGHLIGHT_RGB, textColor: [0, 0, 0], fontStyle: 'bold' }
+                                headStyles: { fillColor: HIGHLIGHT_RGB, textColor: [0, 0, 0], fontStyle: 'bold' },
+                                didDrawPage: (data) => {
+                                    // Ensure border on multi-page tables
+                                    drawPageBorder(doc);
+                                }
                             });
                         } else {
                             const head = [Object.keys(tableData[0])];
@@ -406,7 +428,10 @@ Metrics:
                             doc.autoTable({ 
                                 head, body, startY: currentTopY, 
                                 styles: { fontSize: 8, font: PDF_FONT },
-                                headStyles: { fillColor: HIGHLIGHT_RGB, textColor: [0, 0, 0], fontStyle: 'bold' }
+                                headStyles: { fillColor: HIGHLIGHT_RGB, textColor: [0, 0, 0], fontStyle: 'bold' },
+                                didDrawPage: (data) => {
+                                    drawPageBorder(doc);
+                                }
                             });
                         }
                         zip.file(`${cleanPlayerName.replace(/\s/g, '_')}.pdf`, doc.output('blob'));
@@ -479,7 +504,7 @@ Metrics:
                                     )}
                                     {batterFiles && (
                                         <div className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm hover:shadow-md transition-shadow">
-                                            <div className="flex items-center mb-3"><UsersIcon className="w-5 h-5 mr-2 text-lime-600"/><span className="font-bold">{Object.keys(batterFiles).length} Batter Profiles Found</span></div>
+                                            <div className="flex items-center mb-3"><UsersIcon className="w-5 h-5 mr-2 text-sky-500"/><span className="font-bold">{Object.keys(batterFiles).length} Batter Profiles Found</span></div>
                                             <button onClick={() => handleDownload(batterFiles, 'batters.zip')} disabled={isLoading} className="w-full flex items-center justify-center p-3 bg-lime-500 text-black rounded-lg font-bold hover:bg-lime-600 disabled:bg-slate-300 transition-colors uppercase">Download Batters.zip</button>
                                         </div>
                                     )}
