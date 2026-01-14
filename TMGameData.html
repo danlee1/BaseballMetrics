@@ -6,10 +6,10 @@
     <title>Trackman Live Game Data Processor</title>
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React Libraries (using version 17 for compatibility with this setup) -->
+    <!-- React Libraries -->
     <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
-    <!-- Babel to transpile JSX in the browser -->
+    <!-- Babel to transpile JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- Helper Libraries for CSV parsing, Zipping, and PDF Generation -->
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
@@ -24,777 +24,474 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // The entire React application is placed within this script tag with type="text/babel".
-        
+        const { useState, useCallback, useEffect } = React;
+
+        // Color Constant for #A6FF00 (Neon Green)
+        const HIGHLIGHT_HEX = '#A6FF00';
+        const HIGHLIGHT_RGB = [166, 255, 0];
+        const PDF_FONT = 'helvetica'; // Reverted to standard PDF font
+
         // --- SVG Icons ---
         const Icon = ({ className, children }) => (
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={className}
-            >
-                {children}
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>
         );
 
         const InboxIcon = ({ className }) => <Icon className={className}><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></Icon>;
-        const FileTextIcon = ({ className }) => <Icon className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" x2="8" y1="13" y2="13" /><line x1="16" x2="8" y1="17" y2="17" /><line x1="10" x2="8" y1="9" y2="9" /></Icon>;
         const DownloadIcon = ({ className }) => <Icon className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></Icon>;
-        const ChevronsRightIcon = ({ className }) => <Icon className={className}><polyline points="13 17 18 12 13 7" /><polyline points="6 17 11 12 6 7" /></Icon>;
         const Loader2Icon = ({ className }) => <Icon className={className}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></Icon>;
         const XCircleIcon = ({ className }) => <Icon className={className}><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></Icon>;
         const UsersIcon = ({ className }) => <Icon className={className}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Icon>;
         const UserIcon = ({ className }) => <Icon className={className}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Icon>;
 
-
-        // Main App Component
         const App = () => {
-            // State management
-            const [file, setFile] = React.useState(null);
-            const [fileName, setFileName] = React.useState('');
-            const [pitcherFiles, setPitcherFiles] = React.useState(null);
-            const [batterFiles, setBatterFiles] = React.useState(null);
-            const [isLoading, setIsLoading] = React.useState(false);
-            const [error, setError] = React.useState('');
-            const [processingStatus, setProcessingStatus] = React.useState('');
-            const [processingMode, setProcessingMode] = React.useState('both'); // 'both', 'pitchers', 'batters'
-            const [reportOptions, setReportOptions] = React.useState({
+            const [files, setFiles] = useState([]);
+            const [pitcherFiles, setPitcherFiles] = useState(null);
+            const [batterFiles, setBatterFiles] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [error, setError] = useState('');
+            const [processingStatus, setProcessingStatus] = useState('');
+            const [processingMode, setProcessingMode] = useState('both'); 
+            const [useAutoClassification, setUseAutoClassification] = useState(false);
+            
+            const [reportOptions] = useState({
                 showInsights: true,
                 showVeloSpinChart: true,
                 showMovementChart: true,
             });
             
-            const logoUrl = 'https://app.curvetestcenters.com/_next/image?url=%2Flogos%2FPNG%2Fcurve-2.0-logo_full-hrz-logo-only.png&w=1920&q=75';
+            const logoUrl = 'https://raw.githubusercontent.com/danlee1/BaseballMetrics/refs/heads/main/images/Curve%20Sports-24.png'; 
             
-            // Check if libraries are loaded before enabling buttons
-            const libsLoaded = window.Papa && window.JSZip && window.saveAs && window.jspdf && window.Chart;
+            const libsLoaded = typeof window.Papa !== 'undefined' && 
+                               typeof window.JSZip !== 'undefined' && 
+                               typeof window.saveAs !== 'undefined' && 
+                               typeof window.jspdf !== 'undefined' && 
+                               typeof window.Chart !== 'undefined';
 
-            // Function to fetch an image and convert it to a base64 data URL for the PDF
             const getImageBase64 = async (url) => {
                 try {
                     const response = await fetch(url);
-                    if (!response.ok) {
-                        throw new Error(`Network response was not ok, status: ${response.status}`);
-                    }
+                    if (!response.ok) return null;
                     const blob = await response.blob();
-                    return new Promise((resolve, reject) => {
+                    return new Promise((resolve) => {
                         const reader = new FileReader();
                         reader.onloadend = () => resolve(reader.result);
-                        reader.onerror = (error) => reject(error);
+                        reader.onerror = () => resolve(null);
                         reader.readAsDataURL(blob);
                     });
                 } catch (e) {
-                    console.error("Failed to fetch or convert image:", e);
                     return null;
                 }
             };
 
-
-            // Helper function to clean and round data
             const formatValue = (value) => {
-                if (value === undefined || value === null || value === 'undefined' || value === 'Undefined' || value === '') {
-                    return '';
-                }
-
+                if (value === undefined || value === null || value === 'undefined' || value === '') return '';
                 const num = Number(value);
-                if (!isNaN(num) && String(value).trim() !== '') {
-                    return num.toFixed(2);
-                }
-                
+                if (!isNaN(num) && String(value).trim() !== '') return num.toFixed(2);
                 return value;
             };
-            
-            // Function to generate AI-powered insights for a given pitch type
-            const generatePlayerInsights = async (playerName, pitchData, pitchType) => {
-                if (pitchData.length === 0) {
-                    return `Not enough ${pitchType} data to generate insights.`;
-                }
 
+            const classifyPitchHeuristic = (velo, ivb, hb, maxVelo) => {
+                if (isNaN(velo) || isNaN(ivb) || isNaN(hb)) return null;
+                const delta = velo - maxVelo;
+                if (delta >= -3 && ivb > 12 && hb >= -5 && hb <= 5) return 'Fastball';
+                if (delta >= -4 && ivb >= 4 && ivb <= 10 && hb > 10) return 'Sinker';
+                if (delta <= -2 && delta >= -5 && ivb >= 8 && ivb <= 12 && hb <= -2 && hb >= -6) return 'Cutter';
+                if (delta <= -5 && delta >= -10 && ivb >= 0 && ivb <= 6 && hb <= -5 && hb >= -15) return 'Slider';
+                if (delta <= -11 && ivb < 0) return 'Curveball';
+                if (delta <= -7 && delta >= -13 && ivb < 10 && hb > 8) return 'Changeup';
+                return 'Fastball'; 
+            };
+            
+            const generatePlayerInsights = async (playerName, pitchData, pitchType) => {
+                if (pitchData.length === 0) return "Not enough data.";
                 const avgVelo = pitchData.reduce((a, b) => a + b.x, 0) / pitchData.length;
                 const maxVelo = Math.max(...pitchData.map(p => p.x));
                 const avgSpin = pitchData.reduce((a, b) => a + b.y, 0) / pitchData.length;
                 const avgHorz = pitchData.reduce((a, b) => a + b.horz, 0) / pitchData.length;
                 const avgVert = pitchData.reduce((a, b) => a + b.vert, 0) / pitchData.length;
 
-                const prompt = `
-                    Analyze the following baseball pitcher's ${pitchType} data and provide a personalized, factual summary directly to the player, ${playerName}.
-                    Adopt the persona of a professional baseball data analyst.
-                    Speak directly to the player using "you" and "your" (e.g., "Your ${pitchType} averaged...").
-                    Avoid subjective or judgmental words like "good," "bad," "solid," or "excellent."
-                    Focus on objective analysis. Describe what the metrics indicate about the pitch's characteristics.
-                    Present the analysis as a bulleted list of 3-5 key takeaways, starting each with a "*" character on a new line.
+                const prompt = `You are a professional baseball data analyst specializing in high school and travel baseball development. 
+                Provide 2 to 3 concise, fact-based bullet points interpreting ${playerName}'s ${pitchType} metrics. 
+                Explain technical significance relative to high school travel competition (e.g., how Vertical Break creates 'ride' to beat HS hitters up in the zone). 
+                Keep statements objective. Do not provide coaching advice.
+                The entire response MUST be less than 200 words and fewer than 1250 characters total.
+                Format as a list starting each point with "*" on a new line.
 
-                    Player Name: ${playerName}
-                    Pitch Type: ${pitchType}
-                    Data Summary:
-                    - Average Velocity: ${avgVelo.toFixed(1)} mph
-                    - Max Velocity: ${maxVelo.toFixed(1)} mph
-                    - Average Spin Rate: ${avgSpin.toFixed(0)} rpm
-                    - Average Induced Vertical Break: ${avgVert.toFixed(1)} inches
-                    - Average Horizontal Break: ${avgHorz.toFixed(1)} inches
+Metrics:
+- Avg Velo: ${avgVelo.toFixed(1)} mph
+- Max Velo: ${maxVelo.toFixed(1)} mph
+- Avg Spin: ${avgSpin.toFixed(0)} rpm
+- Avg IVB: ${avgVert.toFixed(1)}"
+- Avg HB: ${avgHorz.toFixed(1)}"`;
 
-                    Example of Factual Insight Style:
-                    * Your ${pitchType} velocity averaged ${avgVelo.toFixed(1)} mph, with a peak of ${maxVelo.toFixed(1)} mph.
-                    * The spin rate averaged ${avgSpin.toFixed(0)} rpm, which, combined with ${avgVert.toFixed(1)}" of vertical break, suggests [carry/sinking/sweeping] action.
-                    * The pitch exhibited an average of ${avgHorz.toFixed(1)}" of horizontal movement.
-                `;
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
                 try {
-                    let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-                    const payload = { contents: chatHistory };
-                    const apiKey = "";
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-                    
                     const response = await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
                     });
-
                     const result = await response.json();
-                    if (result.candidates && result.candidates.length > 0) {
-                        return result.candidates[0].content.parts[0].text;
-                    }
-                    throw new Error("No insights returned from API.");
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) return text;
+                    throw new Error("Empty AI response");
                 } catch (err) {
-                    console.error("AI insight generation failed:", err);
-                    // Fallback to a basic summary if the API fails
-                    return `* Your ${pitchType}s average ${avgVelo.toFixed(1)} mph (topping out at ${maxVelo.toFixed(1)} mph) with an average spin rate of ${avgSpin.toFixed(0)} rpm.\n* The pitch shows an average of ${avgVert.toFixed(1)}" of induced vertical break and ${avgHorz.toFixed(1)}" of horizontal break.`;
+                    return `* Average velocity recorded at ${avgVelo.toFixed(1)} mph.\n* Movement profile of ${avgVert.toFixed(1)}" IVB recorded.`;
                 }
             };
 
-            // Callback for handling file selection from the input
-            const handleFileChange = React.useCallback((event) => {
-                const files = event.target.files;
-                setFile(null);
-                setFileName('');
+            const handleFileChange = (event) => {
+                const selectedFiles = Array.from(event.target.files || []);
+                const csvFiles = selectedFiles.filter(f => f.name.toLowerCase().endsWith('.csv'));
+                if (csvFiles.length < selectedFiles.length) {
+                    setError('Only CSV files were processed.');
+                } else {
+                    setError('');
+                }
+                setFiles(csvFiles);
                 setPitcherFiles(null);
                 setBatterFiles(null);
-                setError('');
+                setProgress(0);
+            };
 
-                if (files && files.length > 0) {
-                    const uploadedFile = files[0];
-                    if (uploadedFile.type !== 'text/csv' && !uploadedFile.name.endsWith('.csv')) {
-                        setError('Invalid file type. Please upload a CSV file.');
-                        return;
-                    }
-                    setFile(uploadedFile);
-                    setFileName(uploadedFile.name);
-                }
-            }, []);
+            const handleProcess = async () => {
+                if (files.length === 0) return;
+                setIsLoading(true); setProgress(0); setError('');
+                setProcessingStatus('Reading Data...');
 
-            // Handle the main processing logic
-            const handleProcess = () => {
-                if (!file) {
-                    setError('Please upload a file first.');
-                    return;
-                }
+                const pitchers = {};
+                const batters = {};
 
-                setIsLoading(true);
-                setError('');
-                setPitcherFiles(null);
-                setBatterFiles(null);
-                setProcessingStatus('Parsing CSV file...');
-
-                window.Papa.parse(file, {
-                    header: true,
-                    skipEmptyLines: true,
-                    complete: (results) => {
-                        if (!results.data || results.data.length === 0) {
-                            setError('CSV file is empty or could not be read.');
-                            setIsLoading(false);
-                            return;
-                        }
-
-                        try {
-                            if (processingMode === 'both' || processingMode === 'pitchers') {
-                                setProcessingStatus('Processing pitcher data...');
-                                const pitchers = {};
+                const processFile = (file) => {
+                    return new Promise((resolve, reject) => {
+                        window.Papa.parse(file, {
+                            header: true, skipEmptyLines: true,
+                            complete: (results) => {
                                 results.data.forEach(row => {
-                                    let pitcherName = row['Pitcher'];
-                                    if (pitcherName) {
-                                        // Remove numbers and hash marks from the name
-                                        pitcherName = pitcherName.replace(/[#0-9]/g, '').trim();
-                                        if (!pitchers[pitcherName]) {
-                                            pitchers[pitcherName] = { data: [], gameDate: null };
+                                    if (processingMode === 'both' || processingMode === 'pitchers') {
+                                        const pName = row['Pitcher'];
+                                        if (pName) {
+                                            if (!pitchers[pName]) pitchers[pName] = { data: [], gameDate: row['Date'] || '', maxVelo: 0 };
+                                            const velo = parseFloat(row['RelSpeed']);
+                                            if (!isNaN(velo) && velo > pitchers[pName].maxVelo) pitchers[pName].maxVelo = velo;
+                                            pitchers[pName].data.push({
+                                                originalTagged: row['TaggedPitchType'],
+                                                'Pitch Type': row['TaggedPitchType'],
+                                                'Pitch Velocity': formatValue(row['RelSpeed']),
+                                                'Spin Rate': formatValue(row['SpinRate']),
+                                                'Vertical Break': formatValue(row['VertBreak']),
+                                                'Induced Vertical Break': formatValue(row['InducedVertBreak']),
+                                                'Horizontal Break': formatValue(row['HorzBreak']),
+                                                'Release Height': formatValue(row['RelHeight']),
+                                                'Release Side': formatValue(row['RelSide']),
+                                                'Extension': formatValue(row['Extension']),
+                                            });
                                         }
-                                        if (!pitchers[pitcherName].gameDate && row['Date']) {
-                                            pitchers[pitcherName].gameDate = row['Date'];
+                                    }
+                                    if (processingMode === 'both' || processingMode === 'batters') {
+                                        const bName = row['Batter'];
+                                        if (bName) {
+                                            if (!batters[bName]) batters[bName] = { data: [], gameDate: row['Date'] || '' };
+                                            batters[bName].data.push({
+                                                'Exit Velocity': formatValue(row['ExitSpeed']),
+                                                'Launch Angle': formatValue(row['Angle']),
+                                                'Distance': formatValue(row['Distance']),
+                                                'Hit Type': formatValue(row['TaggedHitType']),
+                                                'Result': formatValue(row['PlayResult']),
+                                            });
                                         }
-                                        const newRow = {
-                                            'Pitch Type': formatValue(row['TaggedPitchType']),
-                                            'Pitch Velocity': formatValue(row['RelSpeed']),
-                                            'Vertical Release Angle': formatValue(row['VertRelAngle']),
-                                            'Horizontal Release Angle': formatValue(row['HorzRelAngle']),
-                                            'Spin Rate': formatValue(row['SpinRate']),
-                                            'Spin Axis': formatValue(row['SpinAxis']),
-                                            'Tilt': formatValue(row['Tilt']),
-                                            'Release Height': formatValue(row['RelHeight']),
-                                            'Release Side': formatValue(row['RelSide']),
-                                            'Extension': formatValue(row['Extension']),
-                                            'Vertical Break': formatValue(row['VertBreak']),
-                                            'Induced Vertical Break': formatValue(row['InducedVertBreak']),
-                                            'Horizontal Break': formatValue(row['HorzBreak']),
-                                        };
-                                        pitchers[pitcherName].data.push(newRow);
                                     }
                                 });
-                                setPitcherFiles(pitchers);
-                            }
+                                resolve();
+                            },
+                            error: (err) => reject(err)
+                        });
+                    });
+                };
 
-                            if (processingMode === 'both' || processingMode === 'batters') {
-                                setProcessingStatus('Processing batter data...');
-                                const batters = {};
-                                results.data.forEach(row => {
-                                    let batterName = row['Batter'];
-                                    if (batterName) {
-                                        // Remove numbers and hash marks from the name
-                                        batterName = batterName.replace(/[#0-9]/g, '').trim();
-                                        if (!batters[batterName]) {
-                                            batters[batterName] = { data: [], gameDate: null };
-                                        }
-                                        if (!batters[batterName].gameDate && row['Date']) {
-                                            batters[batterName].gameDate = row['Date'];
-                                        }
-                                        const newRow = {
-                                            'Exit Velocity': formatValue(row['ExitSpeed']),
-                                            'Launch Angle': formatValue(row['Angle']),
-                                            'Distance': formatValue(row['Distance']),
-                                            'Direction': formatValue(row['Direction']),
-                                            'Hit Type': formatValue(row['TaggedHitType']),
-                                            'Result': formatValue(row['PlayResult']),
-                                        };
-                                        batters[batterName].data.push(newRow);
-                                    }
-                                });
-                                setBatterFiles(batters);
-                            }
-
-                        } catch (e) {
-                            setError(`An error occurred during processing: ${e.message}. Please check if the CSV columns match the requirements.`);
-                        } finally {
-                            setIsLoading(false);
-                            setProcessingStatus('');
-                        }
-                    },
-                    error: (err) => {
-                        setError(`CSV Parsing Error: ${err.message}`);
-                        setIsLoading(false);
-                        setProcessingStatus('');
+                try {
+                    for (let i = 0; i < files.length; i++) {
+                        await processFile(files[i]);
+                        setProgress(Math.round(((i + 1) / files.length) * 50));
                     }
+                    Object.keys(pitchers).forEach(name => {
+                        const p = pitchers[name];
+                        p.data.forEach(row => {
+                            const original = (row.originalTagged || '').trim().toLowerCase();
+                            const isUntagged = !original || original === 'unknown' || original === 'undefined' || original === '';
+                            if (useAutoClassification && isUntagged) {
+                                const inferred = classifyPitchHeuristic(parseFloat(row['Pitch Velocity']), parseFloat(row['Induced Vertical Break']), parseFloat(row['Horizontal Break']), p.maxVelo);
+                                const finalInferred = inferred || 'Fastball';
+                                row['Pitch Type'] = `${finalInferred} (inferred)`;
+                                row.baseType = finalInferred;
+                            } else {
+                                row['Pitch Type'] = row.originalTagged || 'Unknown';
+                                row.baseType = row['Pitch Type'];
+                            }
+                        });
+                    });
+                    setProgress(100);
+                    setPitcherFiles(Object.keys(pitchers).length > 0 ? pitchers : null);
+                    setBatterFiles(Object.keys(batters).length > 0 ? batters : null);
+                } catch (e) { setError(`Parsing Error: ${e.message}`); }
+                finally { setIsLoading(false); setProcessingStatus(''); }
+            };
+
+            const getChartAsImage = (config) => {
+                return new Promise((resolve) => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 400; canvas.height = 350;
+                    const ctx = canvas.getContext('2d');
+                    const whiteBackgroundPlugin = {
+                        id: 'customCanvasBackgroundColor',
+                        beforeDraw: (chart) => {
+                            const {ctx} = chart; ctx.save();
+                            ctx.globalCompositeOperation = 'destination-over';
+                            ctx.fillStyle = 'white'; ctx.fillRect(0, 0, chart.width, chart.height);
+                            ctx.restore();
+                        }
+                    };
+                    const chart = new window.Chart(ctx, {
+                        ...config,
+                        plugins: [whiteBackgroundPlugin, ...(config.plugins || [])],
+                        options: { 
+                            ...config.options, 
+                            animation: false, 
+                            responsive: false, 
+                            devicePixelRatio: 2
+                        }
+                    });
+                    chart.update('none');
+                    const imgData = canvas.toDataURL('image/jpeg', 0.7);
+                    chart.destroy(); resolve(imgData);
                 });
             };
 
-            // Generic handler for zipping and downloading files
             const handleDownload = async (filesToZip, zipFileName) => {
                 if (!filesToZip) return;
-                setIsLoading(true);
-                setProcessingStatus('Preparing downloads...');
-                
+                setIsLoading(true); setProgress(0);
+                setProcessingStatus('Preparing Reports...');
                 const logoBase64 = await getImageBase64(logoUrl);
 
                 try {
                     const zip = new window.JSZip();
                     const { jsPDF } = window.jspdf;
+                    const players = Object.keys(filesToZip);
 
-                    const playerNames = Object.keys(filesToZip);
-                    for (let i = 0; i < playerNames.length; i++) {
-                        const key = playerNames[i];
+                    for (let i = 0; i < players.length; i++) {
+                        const key = players[i];
                         const playerData = filesToZip[key];
                         const tableData = playerData.data;
-                        const gameDate = playerData.gameDate;
-
                         const nameParts = key.split(',').map(s => s.trim());
-                        const lastName = nameParts[0] || '';
-                        const firstName = nameParts[1] || '';
-                        const cleanPlayerName = `${firstName} ${lastName}`.trim();
+                        let lastNamePart = nameParts[0] || '';
+                        let firstNamePart = nameParts[1] || '';
+                        const gyMatch = lastNamePart.match(/\s(\d{4}|\d{2})$/);
+                        let gy = gyMatch ? (gyMatch[1].length === 2 ? '20' + gyMatch[1] : gyMatch[1]) : '';
+                        if (gyMatch) lastNamePart = lastNamePart.replace(gyMatch[0], '').trim();
+                        const appMatch = firstNamePart.match(/(?:#\s?|\s)(\d+)$/);
+                        let appId = appMatch ? appMatch[1] : '';
+                        if (appMatch) firstNamePart = firstNamePart.replace(appMatch[0], '').trim();
+                        const cleanPlayerName = `${firstNamePart} ${lastNamePart}`;
                         
-                        setProcessingStatus(`Generating report for ${cleanPlayerName} (${i+1}/${playerNames.length})...`);
+                        setProcessingStatus(`Generating ${cleanPlayerName}...`);
+                        setProgress(Math.round((i / players.length) * 100));
 
                         const doc = new jsPDF({ orientation: 'landscape' });
-                        doc.setFont('helvetica', 'sans-serif');
-                        
-                        if (logoBase64) {
-                            doc.addImage(logoBase64, 'PNG', 15, 10, 50, 0);
-                        }
+                        doc.setFont(PDF_FONT, 'normal');
+                        if (logoBase64) doc.addImage(logoBase64, 'PNG', 15, 10, 50, 0);
 
-                        const head = [Object.keys(tableData[0])];
-                        const body = tableData.map(row => Object.values(row));
-
+                        let currentTopY = 48; 
                         if (zipFileName === 'pitchers.zip') {
-                            const introText = "This dataset contains your live game pitching data recorded by TrackMan. It includes detailed information on each pitch tracked during game action, such as velocity, movement, spin, and location metrics. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your pitching coach to maximize its value as a tool for growth.";
-                            const disclaimerText = "Please note: not every pitch thrown in the game may appear in the dataset due to occasional interference or tracking limitations.";
+                            const intro = "This dataset contains your live game pitching data recorded by TrackMan. It includes detailed information on each pitch tracked during game action, such as velocity, movement, spin, and location metrics. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your pitching coach to maximize its value as a tool for growth.";
+                            let boxH = 13; if (gy) boxH += 6; if (appId) boxH += 6; if (playerData.gameDate) boxH += 6;
+                            const introLines = doc.splitTextToSize(intro, 277);
+                            const finalBoxH = boxH + (introLines.length * 4.5) + 15;
                             
-                             // --- Draw the initial page header ONCE per player ---
-                            doc.setFontSize(11);
-                            doc.setFont('helvetica', 'normal');
-                            const introTextLines = doc.splitTextToSize(introText, 267);
-                            const introTextHeight = (introTextLines.length * 4) + 5; 
-                            let infoBoxContentHeight = 13; // Initial height for name
-                            if (gameDate) infoBoxContentHeight += 6;
-                            const boxHeight = infoBoxContentHeight + introTextHeight + 10; 
-
-                            doc.setFillColor(238, 242, 255); 
-                            doc.rect(10, 25, 277, boxHeight, 'F');
-
-                            doc.setTextColor(0, 0, 0);
-                            doc.setFontSize(22);
-                            doc.setFont('helvetica', 'bold');
-                            doc.text(cleanPlayerName, 15, 38);
-
-                            let currentInfoY = 38 + 8;
-                            doc.setFontSize(12);
-                            doc.setFont('helvetica', 'normal');
-                            if (gameDate) {
-                                doc.text(`Date: ${gameDate}`, 15, currentInfoY);
-                            }
+                            doc.setFillColor(...HIGHLIGHT_RGB); 
+                            doc.rect(10, 35, 277, finalBoxH, 'F');
+                            doc.setTextColor(0, 0, 0); 
+                            doc.setFont(PDF_FONT, 'bold').setFontSize(22);
+                            doc.text(cleanPlayerName, 15, currentTopY);
                             
-                            doc.setFontSize(11);
-                            doc.setFont('helvetica', 'normal');
-                            doc.text(introTextLines, 15, currentInfoY + 10);
+                            let headerY = currentTopY + 8;
+                            doc.setFont(PDF_FONT, 'normal').setFontSize(12);
+                            if (gy) { doc.text(`Graduation Year: ${gy}`, 15, headerY); headerY += 6; }
+                            if (appId) { doc.text(`Appointment ID: ${appId}`, 15, headerY); headerY += 6; }
+                            if (playerData.gameDate) { doc.text(`Game Date: ${playerData.gameDate}`, 15, headerY); }
+                            doc.setFontSize(11).text(introLines, 15, headerY + 10);
+                            currentTopY = 35 + finalBoxH + 10;
 
-                            // --- Get all unique pitch types for this player ---
-                            const pitchTypes = [...new Set(tableData.map(p => p['Pitch Type']))].filter(Boolean);
+                            const arsenal = {};
+                            tableData.forEach(p => {
+                                let type = (p.baseType || 'Unknown').trim();
+                                if (!type || type.toLowerCase() === 'unknown') return;
+                                if (!arsenal[type]) arsenal[type] = [];
+                                arsenal[type].push({ x: parseFloat(p['Pitch Velocity']), y: parseFloat(p['Spin Rate']), horz: parseFloat(p['Horizontal Break']), vert: parseFloat(p['Induced Vertical Break']) });
+                            });
 
-                            let isFirstPitchType = true;
-                            let currentY = 25 + boxHeight + 15;
-
-                            // --- Loop through each pitch type and generate its section ---
-                            for (const pitchType of pitchTypes) {
-                                const pitchData = tableData
-                                    .filter(pitch => pitch['Pitch Type'] === pitchType)
-                                    .map(pitch => ({
-                                        x: parseFloat(pitch['Pitch Velocity']),
-                                        y: parseFloat(pitch['Spin Rate']),
-                                        horz: parseFloat(pitch['Horizontal Break']),
-                                        vert: parseFloat(pitch['Induced Vertical Break'])
-                                    }))
-                                    .filter(point => !isNaN(point.x) && !isNaN(point.y) && !isNaN(point.horz) && !isNaN(point.vert));
-
-                                if (pitchData.length < 2) continue;
-                                
-                                // Only add a new page if it's not the first valid pitch type being displayed
-                                if (!isFirstPitchType) {
-                                    doc.addPage();
-                                    currentY = 25; // Reset Y for new pages
-                                }
-
-                                let insights = null;
+                            const renderPitchPage = async (title, data, isSubPage = false) => {
+                                const chartH = 80;
+                                let totalTextHeight = 0; let bulletData = [];
                                 if (reportOptions.showInsights) {
-                                    setProcessingStatus(`Generating insights for ${cleanPlayerName}'s ${pitchType}...`);
-                                    insights = await generatePlayerInsights(cleanPlayerName, pitchData, pitchType);
-                                }
-
-                                let currentX = 15;
-                                const textBlockYOffset = 4; // Vertical offset for text block
-                                
-                                if (insights) {
-                                    doc.setFontSize(12);
-                                    doc.setFont('helvetica', 'bold');
-                                    doc.text(`${pitchType} Characterization`, 15, currentY + textBlockYOffset);
-                                    doc.setFontSize(10);
-                                    doc.setFont('helvetica', 'normal');
-                                    
-                                    let insightY = currentY + 8 + textBlockYOffset;
-                                    const bulletPoints = insights.split('\n').filter(line => line.trim().startsWith('*'));
-
-                                    bulletPoints.forEach(point => {
-                                        const cleanedPoint = point.trim().substring(1).trim();
-                                        const textLines = doc.splitTextToSize(cleanedPoint, 85);
-
-                                        if (textLines.length > 0 && textLines[0] !== '') {
-                                            doc.text('•', 15, insightY);
-                                            doc.text(textLines, 20, insightY);
-                                            insightY += (textLines.length * 4) + 2;
-                                        }
+                                    const text = await generatePlayerInsights(cleanPlayerName, data, title);
+                                    text.split('\n').filter(l => l.trim().startsWith('*')).forEach(p => {
+                                        const lines = doc.splitTextToSize(p.trim().substring(1).trim(), 80);
+                                        const h = (lines.length * 4) + 2;
+                                        bulletData.push({ lines, h }); totalTextHeight += h;
                                     });
-                                    currentX += 95;
                                 }
+                                const labelHeight = 8; const textBlockHeight = reportOptions.showInsights ? (labelHeight + totalTextHeight) : labelHeight;
+                                const maxHeight = Math.max(textBlockHeight, chartH);
+                                if (isSubPage) currentTopY = (doc.internal.pageSize.getHeight() - maxHeight) / 2;
+                                let textStartY = currentTopY + (maxHeight - textBlockHeight) / 2;
+                                let chartY = currentTopY + (maxHeight - chartH) / 2;
+
+                                if (reportOptions.showInsights) {
+                                    doc.setFont(PDF_FONT, 'bold').setFontSize(12).text(`${title} Characterization`, 15, textStartY + 5);
+                                    doc.setFont(PDF_FONT, 'normal').setFontSize(10);
+                                    let y = textStartY + labelHeight + 2;
+                                    bulletData.forEach(item => { doc.text('•', 15, y); doc.text(item.lines, 20, y); y += item.h; });
+                                } else {
+                                    doc.setFont(PDF_FONT, 'bold').setFontSize(14).text(`${title} Analysis`, 15, textStartY + 5);
+                                }
+                                const charts = [reportOptions.showVeloSpinChart && 'velo', reportOptions.showMovementChart && 'move'].filter(Boolean);
+                                const chartW = (297 - 100 - 15 - 5) / (charts.length || 1);
+                                let chartStartX = 100;
                                 
-                                const chartsToRender = [
-                                    reportOptions.showVeloSpinChart && 'velo',
-                                    reportOptions.showMovementChart && 'move'
-                                ].filter(Boolean);
-
-                                const dynamicChartWidth = chartsToRender.length > 0 ? (282 - currentX) / chartsToRender.length : 0;
-                                const pitcherCanvasAspectRatio = 400 / 350;
-                                const dynamicChartHeight = dynamicChartWidth / pitcherCanvasAspectRatio;
-
-                                const whiteBackgroundPlugin = {
-                                    id: 'customCanvasBackgroundColor',
-                                    beforeDraw: (chart) => {
-                                        const ctx = chart.canvas.getContext('2d');
-                                        ctx.save();
-                                        ctx.globalCompositeOperation = 'destination-over';
-                                        ctx.fillStyle = 'white';
-                                        ctx.fillRect(0, 0, chart.width, chart.height);
-                                        ctx.restore();
-                                    }
-                                };
-
                                 if (reportOptions.showVeloSpinChart) {
-                                    const canvasVelo = document.createElement('canvas');
-                                    canvasVelo.width = 400; canvasVelo.height = 350;
-                                    new Chart(canvasVelo.getContext('2d'), {
-                                        type: 'scatter',
-                                        data: { datasets: [{ data: pitchData.map(p => ({x: p.x, y: p.y})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
-                                        plugins: [whiteBackgroundPlugin],
-                                        options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: `${pitchType} Velocity vs. Spin Rate` } }, scales: { x: { title: { display: true, text: 'Velocity (mph)' } }, y: { title: { display: true, text: 'Spin Rate (rpm)' } } } }
+                                    const img = await getChartAsImage({
+                                        type: 'scatter', 
+                                        data: { datasets: [{ data: data.map(pt => ({x: pt.x, y: pt.y})), backgroundColor: HIGHLIGHT_HEX }] },
+                                        options: { plugins: { legend: { display: false }, title: { display: true, text: `${title} Velo vs Spin` } }, scales: { x: { title: { display: true, text: 'Velo' } }, y: { title: { display: true, text: 'Spin' } } } }
                                     });
-                                    doc.addImage(canvasVelo.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, dynamicChartWidth, dynamicChartHeight);
-                                    currentX += dynamicChartWidth + 5;
+                                    doc.addImage(img, 'JPEG', chartStartX, chartY, chartW, chartH);
+                                    chartStartX += chartW + 5;
                                 }
-
                                 if (reportOptions.showMovementChart) {
-                                    const canvasMove = document.createElement('canvas');
-                                    canvasMove.width = 400; canvasMove.height = 350;
-                                    new Chart(canvasMove.getContext('2d'), {
-                                        type: 'scatter',
-                                        data: { datasets: [{ data: pitchData.map(p => ({x: p.horz, y: p.vert})), backgroundColor: '#A78BFA', pointRadius: 5 }] },
-                                        plugins: [whiteBackgroundPlugin, { id: 'heavyZeroAxes', afterDraw: (chart) => { const ctx = chart.ctx; const xAxis = chart.scales.x; const yAxis = chart.scales.y; ctx.save(); ctx.strokeStyle = '#6B7280'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xAxis.left, yAxis.getPixelForValue(0)); ctx.lineTo(xAxis.right, yAxis.getPixelForValue(0)); ctx.stroke(); ctx.beginPath(); ctx.moveTo(xAxis.getPixelForValue(0), yAxis.top); ctx.lineTo(xAxis.getPixelForValue(0), yAxis.bottom); ctx.stroke(); ctx.restore(); } }],
-                                        options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: `${pitchType} Movement Profile` } }, scales: { x: { title: { display: true, text: 'Horizontal Break (in)' }, min: -25, max: 25 }, y: { title: { display: true, text: 'Induced Vertical Break (in)' }, min: -25, max: 25 } } }
+                                    const img = await getChartAsImage({
+                                        type: 'scatter', 
+                                        data: { datasets: [{ data: data.map(pt => ({x: pt.horz, y: pt.vert})), backgroundColor: HIGHLIGHT_HEX }] },
+                                        options: { plugins: { legend: { display: false }, title: { display: true, text: `${title} Movement Profile` } }, scales: { x: { title: { display: true, text: 'HB' } }, y: { title: { display: true, text: 'IVB' } } } }
                                     });
-                                    doc.addImage(canvasMove.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, dynamicChartWidth, dynamicChartHeight);
+                                    doc.addImage(img, 'JPEG', chartStartX, chartY, chartW, chartH);
                                 }
+                                return currentTopY + maxHeight + 15;
+                            };
 
-                                doc.setFontSize(8);
-                                doc.setTextColor(100, 100, 100);
-                                doc.text(disclaimerText, 15, doc.internal.pageSize.getHeight() - 10);
-                                
-                                isFirstPitchType = false;
+                            const fbKeys = Object.keys(arsenal).filter(k => k.toLowerCase().includes('fastball'));
+                            let allFbData = []; fbKeys.forEach(k => { allFbData = allFbData.concat(arsenal[k]); });
+                            await renderPitchPage('Fastball', allFbData.filter(pt => !isNaN(pt.x)), false);
+
+                            const others = Object.keys(arsenal).filter(k => !k.toLowerCase().includes('fastball'));
+                            for (const type of others) {
+                                const pts = arsenal[type].filter(pt => !isNaN(pt.x));
+                                if (pts.length >= 3) { doc.addPage(); await renderPitchPage(type, pts, true); }
                             }
-                            
+
                             doc.addPage();
-                            doc.autoTable({ head, body, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#A78BFA', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
+                            const head = [Object.keys(tableData[0]).filter(k => k !== 'originalTagged' && k !== 'baseType')];
+                            const body = tableData.map(row => Object.keys(row).filter(k => k !== 'originalTagged' && k !== 'baseType').map(k => row[k]));
+                            
+                            doc.autoTable({ 
+                                head, body, 
+                                styles: { fontSize: 8, font: PDF_FONT },
+                                headStyles: { fillColor: HIGHLIGHT_RGB, textColor: [0, 0, 0], fontStyle: 'bold' }
+                            });
                         } else {
-                            // --- Batter PDF Generation ---
-                            const introText = "This dataset contains your live game hitting data recorded by TrackMan. It includes detailed information on each ball you put in play, such as exit velocity, launch angle, and distance. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your coach to maximize its value as a tool for growth.";
-                            const disclaimerText = "Please note: not every ball in play may appear in the dataset due to occasional interference or tracking limitations.";
-
-                            // --- Draw Header ---
-                            doc.setFontSize(11);
-                            doc.setFont('helvetica', 'normal');
-                            const introTextLines = doc.splitTextToSize(introText, 267);
-                            const introTextHeight = (introTextLines.length * 4) + 5; 
-                            let infoBoxContentHeight = 13; // Name
-                            if (gameDate) infoBoxContentHeight += 6;
-                            const boxHeight = infoBoxContentHeight + introTextHeight + 10; 
-
-                            doc.setFillColor(238, 242, 255); 
-                            doc.rect(10, 25, 277, boxHeight, 'F');
-
-                            doc.setTextColor(0, 0, 0);
-                            doc.setFontSize(22);
-                            doc.setFont('helvetica', 'bold');
-                            doc.text(cleanPlayerName, 15, 38);
-
-                            let currentInfoY = 38 + 8;
-                            doc.setFontSize(12);
-                            doc.setFont('helvetica', 'normal');
-                            if (gameDate) {
-                                doc.text(`Game Date: ${gameDate}`, 15, currentInfoY);
-                            }
-                            
-                            doc.setFontSize(11);
-                            doc.setFont('helvetica', 'normal');
-                            doc.text(introTextLines, 15, currentInfoY + 10);
-
-                            let currentY = 25 + boxHeight + 15;
-                            let currentX = 15;
-                            const chartWidth = (doc.internal.pageSize.getWidth() - 40) / 3;
-                            const batterBlastHistoAspectRatio = 450 / 400;
-                            const batterChartHeight = chartWidth / batterBlastHistoAspectRatio;
-                            const sprayChartHeight = chartWidth; // For 1:1 spray chart
-
-                            const hitData = tableData
-                                .map(row => ({
-                                    ev: parseFloat(row['Exit Velocity']),
-                                    la: parseFloat(row['Launch Angle']),
-                                    dist: parseFloat(row['Distance']),
-                                    dir: parseFloat(row['Direction'])
-                                }))
-                                .filter(d => !isNaN(d.ev) && !isNaN(d.la));
-
-                            if (hitData.length > 0) {
-                                // --- Chart Plugins ---
-                                const whiteBackgroundPlugin = {
-                                    id: 'customCanvasBackgroundColor',
-                                    beforeDraw: (chart) => {
-                                        const ctx = chart.canvas.getContext('2d');
-                                        ctx.save();
-                                        ctx.globalCompositeOperation = 'destination-over';
-                                        ctx.fillStyle = 'white';
-                                        ctx.fillRect(0, 0, chart.width, chart.height);
-                                        ctx.restore();
-                                    }
-                                };
-                                
-                                const sprayChartPlugin = {
-                                    id: 'sprayChartField',
-                                    beforeDraw: (chart) => {
-                                        const ctx = chart.ctx;
-                                        const {top, left, right, bottom} = chart.chartArea;
-                                        const x_center = (left + right) / 2;
-                                        const y_bottom = bottom;
-
-                                        ctx.save();
-                                        // Foul lines
-                                        ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
-                                        ctx.lineWidth = 2;
-                                        ctx.beginPath();
-                                        ctx.moveTo(x_center, y_bottom);
-                                        ctx.lineTo(left, top);
-                                        ctx.moveTo(x_center, y_bottom);
-                                        ctx.lineTo(right, top);
-                                        ctx.stroke();
-                                        ctx.restore();
-                                    }
-                                };
-
-                                // --- Chart 1: Blast Chart (LA vs EV) ---
-                                const canvasBlast = document.createElement('canvas');
-                                canvasBlast.width = 450; canvasBlast.height = 400;
-                                new Chart(canvasBlast.getContext('2d'), {
-                                    type: 'scatter',
-                                    data: { datasets: [{ data: hitData.map(d => ({x: d.ev, y: d.la})), backgroundColor: '#38BDF8', pointRadius: 5 }] },
-                                    plugins: [whiteBackgroundPlugin],
-                                    options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Launch Angle vs. Exit Velocity' } }, scales: { x: { title: { display: true, text: 'Exit Velocity (mph)' } }, y: { title: { display: true, text: 'Launch Angle (°)' } } } }
-                                });
-                                doc.addImage(canvasBlast.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, batterChartHeight);
-                                currentX += chartWidth + 5;
-                                
-                                // --- Chart 2: Spray Chart ---
-                                const sprayData = hitData
-                                    .filter(d => !isNaN(d.dir) && !isNaN(d.dist))
-                                    .map(d => {
-                                        const angleRad = d.dir * Math.PI / 180;
-                                        return {
-                                            x: d.dist * Math.sin(angleRad),
-                                            y: d.dist * Math.cos(angleRad) * -1 // Invert Y-axis for correct orientation
-                                        };
-                                    });
-
-                                const canvasSpray = document.createElement('canvas');
-                                canvasSpray.width = 400; canvasSpray.height = 400;
-                                new Chart(canvasSpray.getContext('2d'), {
-                                    type: 'scatter',
-                                    data: { datasets: [{ data: sprayData, backgroundColor: '#38BDF8', pointRadius: 5 }] },
-                                    plugins: [whiteBackgroundPlugin, sprayChartPlugin],
-                                    options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Spray Chart' } }, scales: { x: { display: false, min: -350, max: 350 }, y: { display: false, min: -450, max: 50 } } }
-                                });
-                                doc.addImage(canvasSpray.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, sprayChartHeight);
-                                currentX += chartWidth + 5;
-
-                                // --- Chart 3: Exit Velocity Distribution ---
-                                const evData = hitData.map(d => d.ev);
-                                const minVelo = Math.floor(Math.min(...evData) / 10) * 10;
-                                const maxVelo = Math.ceil(Math.max(...evData) / 10) * 10;
-                                const bins = {};
-                                for(let i = minVelo; i < maxVelo; i += 5) {
-                                    bins[`${i}-${i+5}`] = 0;
-                                }
-                                evData.forEach(velo => {
-                                    const bin = Math.floor(velo / 5) * 5;
-                                    const binName = `${bin}-${bin+5}`;
-                                    if (bins[binName] !== undefined) {
-                                        bins[binName]++;
-                                    }
-                                });
-
-                                const canvasHisto = document.createElement('canvas');
-                                canvasHisto.width = 450; canvasHisto.height = 400;
-                                new Chart(canvasHisto.getContext('2d'), {
-                                    type: 'bar',
-                                    data: { labels: Object.keys(bins), datasets: [{ data: Object.values(bins), backgroundColor: '#38BDF8' }] },
-                                    plugins: [whiteBackgroundPlugin],
-                                    options: { animation: false, responsive: false, devicePixelRatio: 2, plugins: { legend: { display: false }, title: { display: true, text: 'Exit Velocity Distribution' } }, scales: { x: { title: { display: true, text: 'Exit Velocity (mph)' } }, y: { title: { display: true, text: 'Count' }, beginAtZero: true, ticks: { stepSize: 1 } } } }
-                                });
-                                doc.addImage(canvasHisto.toDataURL('image/jpeg', 0.7), 'JPEG', currentX, currentY, chartWidth, batterChartHeight);
-                            }
-                            
-                            doc.setFontSize(8);
-                            doc.setTextColor(100, 100, 100);
-                            doc.text(disclaimerText, 15, doc.internal.pageSize.getHeight() - 10);
-                            
-                            doc.addPage();
-                            doc.autoTable({ head, body, styles: { fontSize: 8, font: 'helvetica' }, headStyles: { fillColor: '#38BDF8', textColor: '#FFFFFF', fontSize: 8, font: 'helvetica', fontStyle: 'bold' } });
+                            const head = [Object.keys(tableData[0])];
+                            const body = tableData.map(row => Object.values(row));
+                            doc.autoTable({ 
+                                head, body, startY: currentTopY, 
+                                styles: { fontSize: 8, font: PDF_FONT },
+                                headStyles: { fillColor: HIGHLIGHT_RGB, textColor: [0, 0, 0], fontStyle: 'bold' }
+                            });
                         }
-
-                        const pdfBlob = doc.output('blob');
-                        const safeFileName = cleanPlayerName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                        zip.file(`${safeFileName}.pdf`, pdfBlob);
+                        zip.file(`${cleanPlayerName.replace(/\s/g, '_')}.pdf`, doc.output('blob'));
                     }
-
-                    const zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
-                        if(metadata.percent) {
-                            setProcessingStatus(`Compressing files (${metadata.percent.toFixed(0)}%)...`);
-                        }
-                    });
+                    const zipBlob = await zip.generateAsync({ type: 'blob' });
                     window.saveAs(zipBlob, zipFileName);
-                } catch (err) {
-                    setError(`Failed to create PDF/ZIP file: ${err.message}`);
-                } finally {
-                    setIsLoading(false);
-                    setProcessingStatus('');
-                }
+                } catch (err) { setError(`Error: ${err.message}`); }
+                finally { setIsLoading(false); setProcessingStatus(''); setProgress(0); }
             };
 
             return (
                 <div className="min-h-screen flex items-center justify-center p-4">
                     <div className="w-full max-w-3xl bg-white rounded-xl shadow-lg p-6 md:p-8 space-y-6">
-                        
                         <div className="text-center">
-                            <img src={logoUrl} alt="Curve Logo" className="mx-auto h-12 w-auto mb-4" crossOrigin="anonymous" />
-                            <h1 className="text-3xl font-bold text-slate-800">Trackman Live Game Data Processor</h1>
-                            <p className="text-slate-500 mt-2">Upload your game CSV to generate separate files for each pitcher and batter.</p>
+                            <img src={logoUrl} alt="Logo" className="mx-auto h-16 w-auto mb-4" />
+                            <h1 className="text-3xl font-bold text-slate-800 uppercase tracking-tight">Trackman Live Game Data Processor</h1>
                         </div>
-
-                        {/* Step 1: File Upload */}
                         <div className="space-y-4">
-                            <h2 className="text-lg font-semibold text-slate-700">Step 1: Upload CSV</h2>
-                            
-                            <label htmlFor="csv-upload" className="w-full block p-8 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors duration-300 border-slate-300 hover:border-indigo-500">
-                                <div className="flex flex-col items-center justify-center text-slate-500">
-                                    <InboxIcon className="w-12 h-12 mb-4 text-indigo-500" />
-                                    <p>Click here to select a CSV file</p>
-                                </div>
+                            <h2 className="text-lg font-semibold text-slate-700">Step 1: Upload CSV Files</h2>
+                            <label htmlFor="csv-upload" className="w-full block p-8 border-2 border-dashed rounded-lg text-center cursor-pointer border-slate-300 hover:border-lime-500 transition-colors">
+                                <InboxIcon className="w-12 h-12 mx-auto mb-4 text-lime-600" />
+                                <p className="text-slate-500 font-medium">Select Trackman CSV Files</p>
                             </label>
-                            <input
-                                id="csv-upload"
-                                type="file"
-                                accept=".csv"
-                                className="hidden"
-                                onChange={handleFileChange}
-                            />
-
-                            {fileName && (
-                                <div className="flex items-center justify-center bg-slate-100 p-3 rounded-lg">
-                                    <FileTextIcon className="w-5 h-5 text-indigo-600 mr-3" />
-                                    <span className="font-medium text-slate-700">{fileName}</span>
+                            <input id="csv-upload" type="file" accept=".csv" multiple className="hidden" onChange={handleFileChange} />
+                            {files.length > 0 && (
+                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 max-h-40 overflow-y-auto">
+                                    <p className="text-sm font-bold text-slate-600 mb-1">{files.length} Files Selected</p>
+                                    {files.map((f, i) => <div key={i} className="text-xs text-slate-500 truncate">• {f.name}</div>)}
                                 </div>
                             )}
                         </div>
-
-                        {/* Step 2: Process */}
-                        {file && !pitcherFiles && !batterFiles && (
-                            <div className="space-y-4">
-                                <h2 className="text-lg font-semibold text-slate-700">Step 2: Process File</h2>
-                                
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium text-slate-600">Processing Mode</label>
-                                    <div className="flex items-center space-x-4 rounded-lg bg-slate-100 p-1">
-                                        <button onClick={() => setProcessingMode('both')} className={`w-full rounded-md p-2 text-sm font-semibold transition-colors ${processingMode === 'both' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}>Both</button>
-                                        <button onClick={() => setProcessingMode('pitchers')} className={`w-full rounded-md p-2 text-sm font-semibold transition-colors ${processingMode === 'pitchers' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}>Pitchers Only</button>
-                                        <button onClick={() => setProcessingMode('batters')} className={`w-full rounded-md p-2 text-sm font-semibold transition-colors ${processingMode === 'batters' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}>Batters Only</button>
+                        {files.length > 0 && !pitcherFiles && !batterFiles && (
+                            <div className="space-y-4 pt-4 border-t border-slate-100">
+                                <div className="flex flex-col space-y-4">
+                                    <div className="flex items-center space-x-2 bg-slate-100 p-1 rounded-lg">
+                                        {['both', 'pitchers', 'batters'].map(m => (
+                                            <button key={m} onClick={() => setProcessingMode(m)} className={`flex-1 capitalize py-2 px-4 rounded-md text-sm font-bold transition-all ${processingMode === m ? 'bg-lime-500 text-black shadow' : 'text-slate-500 hover:bg-slate-200'}`}>{m}</button>
+                                        ))}
                                     </div>
-                                </div>
-
-                                {(processingMode === 'both' || processingMode === 'pitchers') && (
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-600">Report Options</label>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                            <label className="flex items-center space-x-2 cursor-pointer">
-                                                <input type="checkbox" checked={reportOptions.showInsights} onChange={(e) => setReportOptions({...reportOptions, showInsights: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                                <span className="text-sm text-slate-700">Pitch Characterization</span>
-                                            </label>
-                                            <label className="flex items-center space-x-2 cursor-pointer">
-                                                <input type="checkbox" checked={reportOptions.showVeloSpinChart} onChange={(e) => setReportOptions({...reportOptions, showVeloSpinChart: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                                <span className="text-sm text-slate-700">Velo/Spin Chart</span>
-                                            </label>
-                                            <label className="flex items-center space-x-2 cursor-pointer">
-                                                <input type="checkbox" checked={reportOptions.showMovementChart} onChange={(e) => setReportOptions({...reportOptions, showMovementChart: e.target.checked})} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                                <span className="text-sm text-slate-700">Movement Chart</span>
-                                            </label>
+                                    <label className="flex items-center space-x-3 cursor-pointer p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                        <input type="checkbox" className="w-5 h-5 text-lime-600 rounded cursor-pointer" checked={useAutoClassification} onChange={(e) => setUseAutoClassification(e.target.checked)} />
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-bold text-slate-700">Auto Pitch Type Classification</span>
+                                            <span className="text-xs text-slate-500">Automatically group untagged pitches using heuristics (max 200 words per pitch)</span>
                                         </div>
-                                    </div>
-                                )}
-
-                                <button
-                                    onClick={handleProcess}
-                                    disabled={isLoading || !libsLoaded}
-                                    className="w-full flex items-center justify-center p-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105"
-                                >
-                                    {isLoading ? (
-                                        <><Loader2Icon className="w-6 h-6 animate-spin mr-2" /> {processingStatus || 'Processing...'}</>
-                                    ) : !libsLoaded ? (
-                                        <><Loader2Icon className="w-6 h-6 animate-spin mr-2" /> Loading Libraries...</>
-                                    ) : (
-                                        <><ChevronsRightIcon className="w-6 h-6 mr-2" /> Process Data</>
-                                    )}
+                                    </label>
+                                </div>
+                                <button onClick={handleProcess} disabled={isLoading || !libsLoaded} className="w-full flex items-center justify-center p-4 bg-lime-500 text-black font-bold rounded-lg hover:bg-lime-600 transition-all disabled:bg-slate-300 uppercase">
+                                    {isLoading ? <><Loader2Icon className="w-6 h-6 animate-spin mr-2" /> {processingStatus || 'Processing...'}</> : 'Process All Selected Files'}
                                 </button>
+                                {isLoading && <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div className="bg-lime-500 h-full transition-all duration-300" style={{width: `${progress}%`}}></div></div>}
                             </div>
                         )}
-                        
-                        {error && (
-                            <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md flex items-center">
-                                <XCircleIcon className="w-5 h-5 mr-3"/>
-                                <span>{error}</span>
-                            </div>
-                        )}
-
-                        {/* Step 3: Download Results */}
+                        {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center text-sm border border-red-100"><XCircleIcon className="w-5 h-5 mr-3 flex-shrink-0"/>{error}</div>}
                         {(pitcherFiles || batterFiles) && (
                              <div className="space-y-6 pt-4 border-t border-slate-200">
-                                 <h2 className="text-lg font-semibold text-slate-700">Step 3: Download Your Files</h2>
-                                 { isLoading && <p className="text-center text-slate-500">{processingStatus}</p> }
-                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                     {/* Pitcher Download Section */}
-                                     {pitcherFiles && Object.keys(pitcherFiles).length > 0 && (
-                                         <div className="bg-slate-50 p-4 rounded-lg space-y-3">
-                                             <div className="flex items-center text-slate-800">
-                                                 <UserIcon className="w-6 h-6 mr-2 text-indigo-500"/>
-                                                 <h3 className="font-semibold">Pitcher Files ({Object.keys(pitcherFiles).length})</h3>
-                                             </div>
-                                             <button
-                                                 onClick={() => handleDownload(pitcherFiles, 'pitchers.zip')}
-                                                 disabled={isLoading || !libsLoaded}
-                                                 className="w-full flex items-center justify-center p-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 disabled:bg-slate-400 transition-colors"
-                                             >
-                                                 <DownloadIcon className="w-5 h-5 mr-2" />
-                                                 Download Pitchers.zip
-                                             </button>
-                                         </div>
-                                     )}
-
-                                     {/* Batter Download Section */}
-                                     {batterFiles && Object.keys(batterFiles).length > 0 && (
-                                         <div className="bg-slate-50 p-4 rounded-lg space-y-3">
-                                             <div className="flex items-center text-slate-800">
-                                                 <UsersIcon className="w-6 h-6 mr-2 text-sky-500"/>
-                                                 <h3 className="font-semibold">Batter Files ({Object.keys(batterFiles).length})</h3>
-                                             </div>
-                                             <button
-                                                 onClick={() => handleDownload(batterFiles, 'batters.zip')}
-                                                 disabled={isLoading || !libsLoaded}
-                                                 className="w-full flex items-center justify-center p-3 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 disabled:bg-slate-400 transition-colors"
-                                             >
-                                                 <DownloadIcon className="w-5 h-5 mr-2" />
-                                                 Download Batters.zip
-                                             </button>
-                                         </div>
-                                     )}
-                                 </div>
-                             </div>
+                                <h2 className="text-lg font-semibold text-slate-700">Step 3: Download Reports</h2>
+                                {isLoading && (
+                                    <div className="space-y-2">
+                                        <p className="text-xs text-center font-bold text-lime-600 truncate">{processingStatus} ({progress}%)</p>
+                                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div className="bg-lime-500 h-full transition-all duration-300" style={{width: `${progress}%`}}></div></div>
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {pitcherFiles && (
+                                        <div className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm hover:shadow-md transition-shadow">
+                                            <div className="flex items-center mb-3"><UserIcon className="w-5 h-5 mr-2 text-lime-600"/><span className="font-bold">{Object.keys(pitcherFiles).length} Pitcher Profiles Found</span></div>
+                                            <button onClick={() => handleDownload(pitcherFiles, 'pitchers.zip')} disabled={isLoading} className="w-full flex items-center justify-center p-3 bg-lime-500 text-black rounded-lg font-bold hover:bg-lime-600 disabled:bg-slate-300 transition-colors uppercase">Download Pitchers.zip</button>
+                                        </div>
+                                    )}
+                                    {batterFiles && (
+                                        <div className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm hover:shadow-md transition-shadow">
+                                            <div className="flex items-center mb-3"><UsersIcon className="w-5 h-5 mr-2 text-lime-600"/><span className="font-bold">{Object.keys(batterFiles).length} Batter Profiles Found</span></div>
+                                            <button onClick={() => handleDownload(batterFiles, 'batters.zip')} disabled={isLoading} className="w-full flex items-center justify-center p-3 bg-lime-500 text-black rounded-lg font-bold hover:bg-lime-600 disabled:bg-slate-300 transition-colors uppercase">Download Batters.zip</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>
             );
         };
 
-        // Render the React application into the #root div
         ReactDOM.render(<App />, document.getElementById('root'));
-
     </script>
 </body>
 </html>
-
-
-
-
