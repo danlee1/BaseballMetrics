@@ -26,10 +26,11 @@
     <script type="text/babel">
         const { useState, useCallback, useEffect } = React;
 
-        // Color Constant for #A6FF00 (Neon Green)
+        // Configuration Constants
         const HIGHLIGHT_HEX = '#A6FF00';
         const HIGHLIGHT_RGB = [166, 255, 0];
         const PDF_FONT = 'helvetica';
+        const apiKey = ""; 
 
         // --- SVG Icons ---
         const Icon = ({ className, children }) => (
@@ -111,11 +112,12 @@
                 const avgHorz = pitchData.reduce((a, b) => a + b.horz, 0) / pitchData.length;
                 const avgVert = pitchData.reduce((a, b) => a + b.vert, 0) / pitchData.length;
 
-                const prompt = `You are a professional baseball data analyst specializing in high school and travel baseball development. 
-                Provide 2 to 3 concise, fact-based bullet points interpreting ${playerName}'s ${pitchType} metrics. 
-                Explain technical significance relative to high school travel competition (e.g., how Vertical Break creates 'ride' to beat HS hitters up in the zone). 
-                Keep statements objective. Do not provide coaching advice.
-                The entire response MUST be less than 200 words and fewer than 1250 characters total.
+                const prompt = `You are a professional baseball performance analyst. Analyze ${playerName}'s ${pitchType} profile. 
+                Provide 2 to 3 concise, fact-based bullet points interpreting these metrics. 
+                Focus on movement profile (IVB/HB) and velocity floor/ceiling. 
+                Explain technical significance relative to high school development (e.g., 'high ride beats hitters up' or 'lateral sweep creates chase'). 
+                Keep statements objective. Do not provide coaching advice. 
+                The entire response MUST be less than 150 words and fewer than 1000 characters total.
                 Format as a list starting each point with "*" on a new line.
 
 Metrics:
@@ -125,20 +127,46 @@ Metrics:
 - Avg IVB: ${avgVert.toFixed(1)}"
 - Avg HB: ${avgHorz.toFixed(1)}"`;
 
-                const apiKey = "";
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
+                const fetchWithRetry = async (url, options, retries = 5, backoff = 1000) => {
+                    try {
+                        const response = await fetch(url, options);
+                        if (!response.ok) {
+                            if (retries > 0 && (response.status === 429 || response.status >= 500)) {
+                                await new Promise(r => setTimeout(r, backoff));
+                                return fetchWithRetry(url, options, retries - 1, backoff * 2);
+                            }
+                            throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
+                        }
+                        const result = await response.json();
+                        if (result.error) throw new Error(result.error.message);
+
+                        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) {
+                            if (text.length <= 150) {
+                                console.log(`[Insight Audit] ${playerName} ${pitchType}: Short AI Response (${text.length} chars)`, text);
+                            }
+                            return text;
+                        }
+                        throw new Error("No response from AI");
+                    } catch (err) {
+                        if (retries > 0 && !err.message.includes("401") && !err.message.includes("403")) {
+                            await new Promise(r => setTimeout(r, backoff));
+                            return fetchWithRetry(url, options, retries - 1, backoff * 2);
+                        }
+                        throw err;
+                    }
+                };
+
                 try {
-                    const response = await fetch(apiUrl, {
+                    return await fetchWithRetry(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
                     });
-                    const result = await response.json();
-                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (text) return text;
-                    throw new Error("Empty AI response");
                 } catch (err) {
+                    console.warn(`[AI Fallback Triggered] ${playerName} (${pitchType}) - Reason: ${err.message}`);
                     return `* Average velocity recorded at ${avgVelo.toFixed(1)} mph.\n* Movement profile of ${avgVert.toFixed(1)}" IVB recorded.`;
                 }
             };
@@ -146,15 +174,11 @@ Metrics:
             const handleFileChange = (event) => {
                 const selectedFiles = Array.from(event.target.files || []);
                 const csvFiles = selectedFiles.filter(f => f.name.toLowerCase().endsWith('.csv'));
-                if (csvFiles.length < selectedFiles.length) {
-                    setError('Only CSV files were processed.');
-                } else {
-                    setError('');
-                }
                 setFiles(csvFiles);
                 setPitcherFiles(null);
                 setBatterFiles(null);
                 setProgress(0);
+                setError(csvFiles.length < selectedFiles.length ? 'Only CSV files were processed.' : '');
             };
 
             const handleProcess = async () => {
@@ -243,7 +267,7 @@ Metrics:
             const getChartAsImage = (config) => {
                 return new Promise((resolve) => {
                     const canvas = document.createElement('canvas');
-                    canvas.width = 400; canvas.height = 350;
+                    canvas.width = 400; canvas.height = 400;
                     const ctx = canvas.getContext('2d');
                     const whiteBackgroundPlugin = {
                         id: 'customCanvasBackgroundColor',
@@ -261,7 +285,8 @@ Metrics:
                             ...config.options, 
                             animation: false, 
                             responsive: false, 
-                            devicePixelRatio: 2
+                            maintainAspectRatio: true,
+                            devicePixelRatio: 2 
                         }
                     });
                     chart.update('none');
@@ -281,14 +306,12 @@ Metrics:
                     const { jsPDF } = window.jspdf;
                     const players = Object.keys(filesToZip);
 
-                    // Border Drawing Helper: 10px approx 3.5mm
                     const drawPageBorder = (doc) => {
                         const width = doc.internal.pageSize.getWidth();
                         const height = doc.internal.pageSize.getHeight();
                         const lineWidth = 3.5; 
                         doc.setLineWidth(lineWidth);
                         doc.setDrawColor(...HIGHLIGHT_RGB);
-                        // Stroke the rectangle relative to center of line thickness
                         doc.rect(lineWidth / 2, lineWidth / 2, width - lineWidth, height - lineWidth, 'S');
                     };
 
@@ -310,31 +333,46 @@ Metrics:
                         setProcessingStatus(`Generating ${cleanPlayerName}...`);
                         setProgress(Math.round((i / players.length) * 100));
 
-                        const doc = new jsPDF({ orientation: 'landscape' });
+                        const doc = new jsPDF({ orientation: 'landscape', compress: true });
                         doc.setFont(PDF_FONT, 'normal');
-                        drawPageBorder(doc); // Page 1 Border
+                        drawPageBorder(doc); 
 
                         if (logoBase64) doc.addImage(logoBase64, 'PNG', 15, 10, 50, 0);
 
                         let currentTopY = 48; 
                         if (zipFileName === 'pitchers.zip') {
-                            const intro = "This dataset contains your live game pitching data recorded by TrackMan. It includes detailed information on each pitch tracked during game action, such as velocity, movement, spin, and location metrics. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your pitching coach to maximize its value as a tool for growth.";
+                            const intro = "This dataset contains your live game pitching data recorded by TrackMan*. It includes detailed information on each pitch tracked during game action, such as velocity, movement, spin, and location metrics. The goal of sharing this data is to provide you with clear insights into your performance, highlight strengths, and identify areas for continued development. We encourage you to review this data with your pitching coach to maximize its value as a tool for growth.";
+                            
                             let boxH = 13; if (gy) boxH += 6; if (appId) boxH += 6; if (playerData.gameDate) boxH += 6;
-                            const introLines = doc.splitTextToSize(intro, 277);
+                            
+                            // MODIFICATION: Buffer increased to 10mm (Starting at 20mm since box is at 10mm)
+                            const boxX = 10;
+                            const textX = 20; 
+                            const innerWidth = 257; // 277 total box width - 20mm (10 left + 10 right)
+                            
+                            // Calculate height based on 10mm margins
+                            const introLines = doc.splitTextToSize(intro, innerWidth);
                             const finalBoxH = boxH + (introLines.length * 4.5) + 15;
                             
                             doc.setFillColor(...HIGHLIGHT_RGB); 
-                            doc.rect(10, 35, 277, finalBoxH, 'F');
+                            doc.rect(boxX, 35, 277, finalBoxH, 'F');
                             doc.setTextColor(0, 0, 0); 
                             doc.setFont(PDF_FONT, 'bold').setFontSize(22);
-                            doc.text(cleanPlayerName, 15, currentTopY);
+                            doc.text(cleanPlayerName, textX, currentTopY);
                             
                             let headerY = currentTopY + 8;
                             doc.setFont(PDF_FONT, 'normal').setFontSize(12);
-                            if (gy) { doc.text(`Graduation Year: ${gy}`, 15, headerY); headerY += 6; }
-                            if (appId) { doc.text(`Appointment ID: ${appId}`, 15, headerY); headerY += 6; }
-                            if (playerData.gameDate) { doc.text(`Game Date: ${playerData.gameDate}`, 15, headerY); }
-                            doc.setFontSize(11).text(introLines, 15, headerY + 10);
+                            if (gy) { doc.text(`Graduation Year: ${gy}`, textX, headerY); headerY += 6; }
+                            if (appId) { doc.text(`Appointment ID: ${appId}`, textX, headerY); headerY += 6; }
+                            if (playerData.gameDate) { doc.text(`Game Date: ${playerData.gameDate}`, textX, headerY); }
+                            
+                            // MODIFICATION: Intro text justified using the full width (minus 10mm margins)
+                            doc.setFontSize(11).text(intro, textX, headerY + 10, { maxWidth: innerWidth, align: 'justify' });
+
+                            doc.setFontSize(8).setTextColor(120, 120, 120);
+                            doc.text("*Please note that due to technical or environmental factors inherent in live game tracking, not all pitches delivered may have been successfully registered.", 15, 202);
+                            doc.setTextColor(0, 0, 0); 
+                            
                             currentTopY = 35 + finalBoxH + 10;
 
                             const arsenal = {};
@@ -347,11 +385,13 @@ Metrics:
 
                             const renderPitchPage = async (title, data, isSubPage = false) => {
                                 const chartH = 80;
+                                const chartW = 80;
                                 let totalTextHeight = 0; let bulletData = [];
                                 if (reportOptions.showInsights) {
+                                    doc.setFont(PDF_FONT, 'normal').setFontSize(10);
                                     const text = await generatePlayerInsights(cleanPlayerName, data, title);
                                     text.split('\n').filter(l => l.trim().startsWith('*')).forEach(p => {
-                                        const lines = doc.splitTextToSize(p.trim().substring(1).trim(), 80);
+                                        const lines = doc.splitTextToSize(p.trim().substring(1).trim(), 60);
                                         const h = (lines.length * 4) + 2;
                                         bulletData.push({ lines, h }); totalTextHeight += h;
                                     });
@@ -366,13 +406,17 @@ Metrics:
                                     doc.setFont(PDF_FONT, 'bold').setFontSize(12).text(`${title} Characterization`, 15, textStartY + 5);
                                     doc.setFont(PDF_FONT, 'normal').setFontSize(10);
                                     let y = textStartY + labelHeight + 2;
-                                    bulletData.forEach(item => { doc.text('•', 15, y); doc.text(item.lines, 20, y); y += item.h; });
+                                    bulletData.forEach(item => {
+                                        doc.text('•', 15, y);
+                                        doc.text(item.lines, 20, y); 
+                                        y += item.h;
+                                    });
                                 } else {
                                     doc.setFont(PDF_FONT, 'bold').setFontSize(14).text(`${title} Analysis`, 15, textStartY + 5);
                                 }
-                                const charts = [reportOptions.showVeloSpinChart && 'velo', reportOptions.showMovementChart && 'move'].filter(Boolean);
-                                const chartW = (297 - 100 - 15 - 5) / (charts.length || 1);
-                                let chartStartX = 100;
+                                
+                                // Maintain the 15mm gap previously established
+                                let currentChartX = 95;
                                 
                                 if (reportOptions.showVeloSpinChart) {
                                     const img = await getChartAsImage({
@@ -380,8 +424,8 @@ Metrics:
                                         data: { datasets: [{ data: data.map(pt => ({x: pt.x, y: pt.y})), backgroundColor: HIGHLIGHT_HEX }] },
                                         options: { plugins: { legend: { display: false }, title: { display: true, text: `${title} Velo vs Spin` } }, scales: { x: { title: { display: true, text: 'Velo' } }, y: { title: { display: true, text: 'Spin' } } } }
                                     });
-                                    doc.addImage(img, 'JPEG', chartStartX, chartY, chartW, chartH);
-                                    chartStartX += chartW + 5;
+                                    doc.addImage(img, 'JPEG', currentChartX, chartY, chartW, chartH);
+                                    currentChartX += chartW + 5;
                                 }
                                 if (reportOptions.showMovementChart) {
                                     const img = await getChartAsImage({
@@ -389,7 +433,7 @@ Metrics:
                                         data: { datasets: [{ data: data.map(pt => ({x: pt.horz, y: pt.vert})), backgroundColor: HIGHLIGHT_HEX }] },
                                         options: { plugins: { legend: { display: false }, title: { display: true, text: `${title} Movement Profile` } }, scales: { x: { title: { display: true, text: 'HB' } }, y: { title: { display: true, text: 'IVB' } } } }
                                     });
-                                    doc.addImage(img, 'JPEG', chartStartX, chartY, chartW, chartH);
+                                    doc.addImage(img, 'JPEG', currentChartX, chartY, chartW, chartH);
                                 }
                                 return currentTopY + maxHeight + 15;
                             };
@@ -403,13 +447,13 @@ Metrics:
                                 const pts = arsenal[type].filter(pt => !isNaN(pt.x));
                                 if (pts.length >= 3) { 
                                     doc.addPage(); 
-                                    drawPageBorder(doc); // Subpage Border
+                                    drawPageBorder(doc); 
                                     await renderPitchPage(type, pts, true); 
                                 }
                             }
 
                             doc.addPage();
-                            drawPageBorder(doc); // Table Page Border
+                            drawPageBorder(doc); 
                             const head = [Object.keys(tableData[0]).filter(k => k !== 'originalTagged' && k !== 'baseType')];
                             const body = tableData.map(row => Object.keys(row).filter(k => k !== 'originalTagged' && k !== 'baseType').map(k => row[k]));
                             
@@ -417,10 +461,7 @@ Metrics:
                                 head, body, 
                                 styles: { fontSize: 8, font: PDF_FONT },
                                 headStyles: { fillColor: HIGHLIGHT_RGB, textColor: [0, 0, 0], fontStyle: 'bold' },
-                                didDrawPage: (data) => {
-                                    // Ensure border on multi-page tables
-                                    drawPageBorder(doc);
-                                }
+                                didDrawPage: (data) => { drawPageBorder(doc); }
                             });
                         } else {
                             const head = [Object.keys(tableData[0])];
@@ -429,69 +470,63 @@ Metrics:
                                 head, body, startY: currentTopY, 
                                 styles: { fontSize: 8, font: PDF_FONT },
                                 headStyles: { fillColor: HIGHLIGHT_RGB, textColor: [0, 0, 0], fontStyle: 'bold' },
-                                didDrawPage: (data) => {
-                                    drawPageBorder(doc);
-                                }
+                                didDrawPage: (data) => { drawPageBorder(doc); }
                             });
                         }
                         zip.file(`${cleanPlayerName.replace(/\s/g, '_')}.pdf`, doc.output('blob'));
                     }
-                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    const zipBlob = await zip.generateAsync({ 
+                        type: 'blob',
+                        compression: 'DEFLATE',
+                        compressionOptions: { level: 6 } 
+                    });
                     window.saveAs(zipBlob, zipFileName);
                 } catch (err) { setError(`Error: ${err.message}`); }
                 finally { setIsLoading(false); setProcessingStatus(''); setProgress(0); }
             };
 
             return (
-                <div className="min-h-screen flex items-center justify-center p-4">
+                <div className="min-h-screen flex items-center justify-center p-4 text-slate-800">
                     <div className="w-full max-w-3xl bg-white rounded-xl shadow-lg p-6 md:p-8 space-y-6">
                         <div className="text-center">
                             <img src={logoUrl} alt="Logo" className="mx-auto h-16 w-auto mb-4" />
-                            <h1 className="text-3xl font-bold text-slate-800 uppercase tracking-tight">Trackman Live Game Data Processor</h1>
+                            <h1 className="text-3xl font-bold uppercase tracking-tight">Trackman Live Game Data Processor</h1>
                         </div>
                         <div className="space-y-4">
                             <h2 className="text-lg font-semibold text-slate-700">Step 1: Upload CSV Files</h2>
                             <label htmlFor="csv-upload" className="w-full block p-8 border-2 border-dashed rounded-lg text-center cursor-pointer border-slate-300 hover:border-lime-500 transition-colors">
                                 <InboxIcon className="w-12 h-12 mx-auto mb-4 text-lime-600" />
-                                <p className="text-slate-500 font-medium">Select Trackman CSV Files</p>
+                                <p className="text-slate-500">Select Trackman CSV Files</p>
                             </label>
                             <input id="csv-upload" type="file" accept=".csv" multiple className="hidden" onChange={handleFileChange} />
-                            {files.length > 0 && (
-                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 max-h-40 overflow-y-auto">
-                                    <p className="text-sm font-bold text-slate-600 mb-1">{files.length} Files Selected</p>
-                                    {files.map((f, i) => <div key={i} className="text-xs text-slate-500 truncate">• {f.name}</div>)}
-                                </div>
-                            )}
                         </div>
                         {files.length > 0 && !pitcherFiles && !batterFiles && (
                             <div className="space-y-4 pt-4 border-t border-slate-100">
-                                <div className="flex flex-col space-y-4">
-                                    <div className="flex items-center space-x-2 bg-slate-100 p-1 rounded-lg">
-                                        {['both', 'pitchers', 'batters'].map(m => (
-                                            <button key={m} onClick={() => setProcessingMode(m)} className={`flex-1 capitalize py-2 px-4 rounded-md text-sm font-bold transition-all ${processingMode === m ? 'bg-lime-500 text-black shadow' : 'text-slate-500 hover:bg-slate-200'}`}>{m}</button>
-                                        ))}
-                                    </div>
-                                    <label className="flex items-center space-x-3 cursor-pointer p-2 bg-slate-50 rounded-lg border border-slate-200">
-                                        <input type="checkbox" className="w-5 h-5 text-lime-600 rounded cursor-pointer" checked={useAutoClassification} onChange={(e) => setUseAutoClassification(e.target.checked)} />
-                                        <div className="flex flex-col">
-                                            <span className="text-sm font-bold text-slate-700">Auto Pitch Type Classification</span>
-                                            <span className="text-xs text-slate-500">Automatically group untagged pitches using heuristics (max 200 words per pitch)</span>
-                                        </div>
-                                    </label>
+                                <div className="flex items-center space-x-2 bg-slate-100 p-1 rounded-lg">
+                                    {['both', 'pitchers', 'batters'].map(m => (
+                                        <button key={m} onClick={() => setProcessingMode(m)} className={`flex-1 capitalize py-2 px-4 rounded-md text-sm font-bold transition-all ${processingMode === m ? 'bg-lime-500 text-black shadow' : 'text-slate-500 hover:bg-slate-200'}`}>{m}</button>
+                                    ))}
                                 </div>
+                                <label className="flex items-center space-x-3 cursor-pointer p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                    <input type="checkbox" className="w-5 h-5 text-lime-600 rounded cursor-pointer" checked={useAutoClassification} onChange={(e) => setUseAutoClassification(e.target.checked)} />
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-bold text-slate-700">Auto Pitch Type Classification</span>
+                                        <span className="text-xs text-slate-500">Automatically group untagged pitches (Strict length limits enabled)</span>
+                                    </div>
+                                </label>
                                 <button onClick={handleProcess} disabled={isLoading || !libsLoaded} className="w-full flex items-center justify-center p-4 bg-lime-500 text-black font-bold rounded-lg hover:bg-lime-600 transition-all disabled:bg-slate-300 uppercase">
-                                    {isLoading ? <><Loader2Icon className="w-6 h-6 animate-spin mr-2" /> {processingStatus || 'Processing...'}</> : 'Process All Selected Files'}
+                                    {isLoading ? <><Loader2Icon className="w-6 h-6 animate-spin mr-2" /> Processing...</> : 'Process All Selected Files'}
                                 </button>
                                 {isLoading && <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div className="bg-lime-500 h-full transition-all duration-300" style={{width: `${progress}%`}}></div></div>}
                             </div>
                         )}
-                        {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center text-sm border border-red-100"><XCircleIcon className="w-5 h-5 mr-3 flex-shrink-0"/>{error}</div>}
+                        {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center text-sm border border-red-100 font-bold"><XCircleIcon className="w-5 h-5 mr-3 flex-shrink-0"/>{error}</div>}
                         {(pitcherFiles || batterFiles) && (
                              <div className="space-y-6 pt-4 border-t border-slate-200">
                                 <h2 className="text-lg font-semibold text-slate-700">Step 3: Download Reports</h2>
                                 {isLoading && (
                                     <div className="space-y-2">
-                                        <p className="text-xs text-center font-bold text-lime-600 truncate">{processingStatus} ({progress}%)</p>
+                                        <p className="text-xs text-center font-bold text-emerald-600 truncate">{processingStatus} ({progress}%)</p>
                                         <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div className="bg-lime-500 h-full transition-all duration-300" style={{width: `${progress}%`}}></div></div>
                                     </div>
                                 )}
